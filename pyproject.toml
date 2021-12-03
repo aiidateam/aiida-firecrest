@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=46.4.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.isort]
+profile = "black"
+src_paths = ["aiida_firecrest", "tests"]
+
+[tool.mypy]
+show_error_codes = true
+check_untyped_defs = true
+scripts_are_modules = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# [[tool.mypy.overrides]]
+# module = 'aiida.*'
+# ignore_missing_imports = true
