@@ -10,8 +10,8 @@ src_paths = ["aiida_firecrest", "tests"]
 show_error_codes = true
 check_untyped_defs = true
 scripts_are_modules = true
-warn_unused_ignores = true
 warn_redundant_casts = true
+# warn_unused_ignores = true
 
 # [[tool.mypy.overrides]]
 # module = 'aiida.*'
