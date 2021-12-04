@@ -1,4 +1,4 @@
-# aiida-firecrest
+# aiida-firecrest [IN-DEVELOPMENT]
 
 AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/)
 
