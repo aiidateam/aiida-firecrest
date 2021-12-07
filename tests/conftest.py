@@ -24,7 +24,7 @@ class FirecrestConfig:
     url: str
     token_uri: str
     client_id: str
-    secret_path: str
+    client_secret: str
     machine: str
     scratch_path: str
 
@@ -42,8 +42,6 @@ class FirecrestMockServer:
         self._scratch.mkdir()
         self._client_id = "test_client_id"
         self._client_secret = "test_client_secret"
-        self._secret_path = tmpdir / "secret.txt"
-        self._secret_path.write_text(self._client_secret)
         self._token_url = "https://test.auth.com/token"
 
     @property
@@ -56,7 +54,7 @@ class FirecrestMockServer:
             url=self._url,
             token_uri=self._token_url,
             client_id=self._client_id,
-            secret_path=str(self._secret_path.absolute()),
+            client_secret=self._client_secret,
             machine=self._machine,
             scratch_path=str(self._scratch.absolute()),
         )
@@ -143,9 +141,6 @@ def firecrest_server(request, monkeypatch, tmp_path: Path):
         # if given, use this config
         with open(config_path) as handle:
             config = json_load(handle)
-        client_secret = config.pop("client_secret")
-        config["secret_path"] = str(tmp_path / "secret.txt")
-        tmp_path.joinpath("secret.txt").write_text(client_secret)
         yield FirecrestConfig(**config)
     else:
         # otherwise use mock server

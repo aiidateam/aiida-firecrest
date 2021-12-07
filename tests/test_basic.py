@@ -11,7 +11,7 @@ def init_transport(firecrest_server):
         url=firecrest_server.url,
         token_uri=firecrest_server.token_uri,
         client_id=firecrest_server.client_id,
-        secret_path=firecrest_server.secret_path,
+        client_secret=firecrest_server.client_secret,
         machine=firecrest_server.machine,
     )
     return transport

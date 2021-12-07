@@ -104,7 +104,7 @@ class FirecrestTransport(Transport):
         url: str,
         token_uri: str,
         client_id: str,
-        secret_path: str,
+        client_secret: Union[str, Path],
         machine: str,
         **kwargs: Any,
     ):
@@ -113,9 +113,12 @@ class FirecrestTransport(Transport):
         self._url = url
         self._token_uri = token_uri
         self._client_id = client_id
-        self._secret_path = secret_path
 
-        secret = Path(self._secret_path).read_text()
+        secret = (
+            client_secret.read_text()
+            if isinstance(client_secret, Path)
+            else client_secret
+        )
 
         self._client = f7t.Firecrest(
             firecrest_url=self._url,
@@ -140,6 +143,9 @@ class FirecrestTransport(Transport):
         return str(self._cwd)
 
     def chdir(self, path: str) -> None:
+        raise NotImplementedError
+
+    def normalize(self, path="."):
         raise NotImplementedError
 
     def chmod(self, path, mode):
@@ -213,6 +219,9 @@ class FirecrestTransport(Transport):
 
     def mkdir(self, path: str, ignore_existing: bool = False) -> None:
         self._client.mkdir(self._machine, self._get_path(path), p=False)
+
+    def getfile(self, remotepath, localpath, *args, **kwargs):
+        raise NotImplementedError
 
     def put(self, localpath, remotepath, *args, **kwargs):
         raise NotImplementedError
