@@ -1,14 +1,14 @@
 import dataclasses
+import io
 from json import dumps as json_dumps
 from json import load as json_load
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, BinaryIO, Dict, Optional, Union
 from urllib.parse import urlparse
 
 import pytest
 import requests
 from requests.models import Response
-from urllib3.packages.six import BytesIO
 
 
 def pytest_addoption(parser):
@@ -64,6 +64,7 @@ class FirecrestMockServer:
         url: Union[str, bytes],
         params: Optional[Dict[str, Any]] = None,
         data: Optional[Dict[str, Any]] = None,
+        files: Optional[Dict[str, BinaryIO]] = None,
         **kwargs: Any,
     ) -> Response:
         response = Response()
@@ -82,6 +83,8 @@ class FirecrestMockServer:
             utilities_mkdir(params or {}, data or {}, response)
         elif endpoint == "/utilities/ls":
             utilities_ls(params or {}, data or {}, response)
+        elif endpoint == "/utilities/upload":
+            utilities_upload(data or {}, files or {}, response)
         else:
             raise requests.exceptions.InvalidURL(f"Unknown endpoint: {endpoint}")
 
@@ -101,7 +104,7 @@ def utilities_file(
         "description": "success",
         "output": "directory" if path.is_dir() else "text",
     }
-    response.raw = BytesIO(json_dumps(return_data).encode(response.encoding))
+    response.raw = io.BytesIO(json_dumps(return_data).encode(response.encoding))
 
 
 def utilities_ls(
@@ -117,7 +120,7 @@ def utilities_ls(
         "description": "success",
         "output": [{"name": f.name} for f in path.iterdir()],
     }
-    response.raw = BytesIO(json_dumps(return_data).encode(response.encoding))
+    response.raw = io.BytesIO(json_dumps(return_data).encode(response.encoding))
 
 
 def utilities_mkdir(
@@ -130,7 +133,20 @@ def utilities_mkdir(
         return
     path.mkdir(parents=data.get("p", False))
     response.status_code = 201
-    response.raw = BytesIO(b"{}")
+    response.raw = io.BytesIO(b"{}")
+
+
+def utilities_upload(
+    data: Dict[str, Any], files: Dict[str, BinaryIO], response: Response
+) -> None:
+    path = Path(data["targetPath"]) / Path(files["file"].name).name
+    if not path.parent.exists():
+        response.status_code = 400
+        response.headers["X-Invalid-Path"] = ""
+        return
+    path.write_bytes(files["file"].read())
+    response.status_code = 201
+    response.raw = io.BytesIO(b"{}")
 
 
 @pytest.fixture(scope="function")

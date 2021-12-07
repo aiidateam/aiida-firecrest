@@ -39,10 +39,13 @@ def test_mkdir(firecrest_server):
     assert transport.isdir(firecrest_server.scratch_path + "/test")
 
 
-def test_isfile(firecrest_server):
+def test_putfile(firecrest_server, tmp_path):
     transport = init_transport(firecrest_server)
     assert not transport.isfile(firecrest_server.scratch_path + "/file.txt")
-    # TODO make file then re-test
+    file_path = tmp_path.joinpath("file.txt")
+    file_path.write_text("test")
+    transport.putfile(str(file_path), firecrest_server.scratch_path + "/file.txt")
+    assert transport.isfile(firecrest_server.scratch_path + "/file.txt")
 
 
 def test_listdir(firecrest_server):

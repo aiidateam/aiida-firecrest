@@ -72,6 +72,13 @@ def main(connection, config):
         connection.set_path(Path.cwd() / ".firecrest-config.json")
 
 
+@main.command("parameters")
+@connection
+def parameters(connection):
+    """Get the parameters that can be configured in environment files."""
+    print(yaml.dump(connection.client.parameters()))
+
+
 @main.command("services")
 @connection
 def services(connection: Connection):
@@ -100,3 +107,21 @@ def systems(connection: Connection):
 def system(connection: Connection, system: str):
     """Information about a system."""
     click.echo(yaml.dump(connection.client.system(system)))
+
+
+@main.command("ls")
+@click.argument("path")
+@connection
+def ls(connection: Connection, path: str):
+    """List files in a path."""
+    click.echo(yaml.dump(connection.transport.listdir(path)))
+
+
+@main.command("putfile")
+@click.argument("source_path")
+@click.argument("target_path")
+@connection
+def putfile(connection: Connection, source_path: str, target_path: str):
+    """List files in a path."""
+    connection.transport.putfile(source_path, target_path)
+    click.secho(f"Uploaded {source_path} to {target_path}", fg="green")

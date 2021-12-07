@@ -148,11 +148,11 @@ class FirecrestTransport(Transport):
     def normalize(self, path="."):
         raise NotImplementedError
 
-    def chmod(self, path, mode):
-        raise NotImplementedError
+    def chmod(self, path: str, mode: str):
+        self._client.chmod(self._machine, self._get_path(path), mode=mode)
 
-    def chown(self, path, uid, gid):
-        raise NotImplementedError
+    def chown(self, path, uid: str, gid: str):
+        self._client.chmod(self._machine, self._get_path(path), owner=uid, group=gid)
 
     def copy(self, remotesource, remotedestination, dereference=False, recursive=True):
         raise NotImplementedError
@@ -226,8 +226,13 @@ class FirecrestTransport(Transport):
     def put(self, localpath, remotepath, *args, **kwargs):
         raise NotImplementedError
 
-    def putfile(self, localpath, remotepath, *args, **kwargs):
-        raise NotImplementedError
+    def putfile(self, localpath: str, remotepath: str, *args, **kwargs):
+        # TODO handle large files (maybe use .parameters() to decide if file is large)
+        # TODO pyfirecrest requires the remotepath to be a directory & takes the name from localpath
+        remotepathlib = PurePosixPath(self._get_path(remotepath))
+        assert Path(localpath).name == remotepathlib.name
+        # note this allows overwriting
+        self._client.simple_upload(self._machine, localpath, str(remotepathlib.parent))
 
     def puttree(self, localpath, remotepath, *args, **kwargs):
         raise NotImplementedError
