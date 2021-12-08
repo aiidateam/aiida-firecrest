@@ -47,7 +47,7 @@ class Connection:
         """Get the transport."""
         transport = FirecrestTransport(**self.info)
         if "scratch_path" in self.info:
-            transport.chdir(self.info["scratch_path"])
+            transport.chdir(self.info["scratch_path"], check_exists=False)
         return transport
 
     @property
@@ -77,7 +77,7 @@ def main(connection, config):
 @main.command("parameters")
 @connection
 def parameters(connection: Connection):
-    """Get the parameters that can be configured in environment files."""
+    """Get parameters that can be configured in environment files."""
     print(yaml.dump(connection.client.parameters()))
 
 

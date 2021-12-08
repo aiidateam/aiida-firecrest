@@ -156,13 +156,14 @@ class FirecrestTransport(Transport):
     def getcwd(self) -> str:
         return str(self._cwd)
 
-    def chdir(self, path: str) -> None:
-        try:
-            self._client.file_type(self._machine, path)
-        except HeaderException as exc:
-            if "X-Invalid-Path" in exc.responses[-1].headers:
-                raise FileNotFoundError(path)
-            raise
+    def chdir(self, path: str, check_exists: bool = True) -> None:
+        if check_exists:
+            try:
+                self._client.file_type(self._machine, path)
+            except HeaderException as exc:
+                if "X-Invalid-Path" in exc.responses[-1].headers:
+                    raise FileNotFoundError(path)
+                raise
         self._cwd = PurePosixPath(path)
 
     def normalize(self, path="."):
