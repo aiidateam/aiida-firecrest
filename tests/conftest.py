@@ -80,9 +80,13 @@ class FirecrestMockServer:
         if endpoint == "/utilities/file":
             utilities_file(params or {}, data or {}, response)
         elif endpoint == "/utilities/mkdir":
-            utilities_mkdir(params or {}, data or {}, response)
+            utilities_mkdir(data or {}, response)
         elif endpoint == "/utilities/ls":
-            utilities_ls(params or {}, data or {}, response)
+            utilities_ls(params or {}, response)
+        elif endpoint == "/utilities/chmod":
+            utilities_chmod(data or {}, response)
+        # elif endpoint == "/utilities/chown":
+        #     utilities_chown(data or {}, response)
         elif endpoint == "/utilities/upload":
             utilities_upload(data or {}, files or {}, response)
         else:
@@ -107,9 +111,7 @@ def utilities_file(
     response.raw = io.BytesIO(json_dumps(return_data).encode(response.encoding))
 
 
-def utilities_ls(
-    params: Dict[str, Any], data: Dict[str, Any], response: Response
-) -> None:
+def utilities_ls(params: Dict[str, Any], response: Response) -> None:
     path = Path(params["targetPath"])
     if not path.is_dir():
         response.status_code = 400
@@ -123,9 +125,19 @@ def utilities_ls(
     response.raw = io.BytesIO(json_dumps(return_data).encode(response.encoding))
 
 
-def utilities_mkdir(
-    params: Dict[str, Any], data: Dict[str, Any], response: Response
-) -> None:
+def utilities_chmod(data: Dict[str, Any], response: Response) -> None:
+    path = Path(data["targetPath"])
+    if not path.exists():
+        response.status_code = 400
+        response.headers["X-Invalid-Path"] = ""
+        return
+    path.chmod(int(data["mode"], 8))
+    response.status_code = 200
+    return_data = {"description": "success"}
+    response.raw = io.BytesIO(json_dumps(return_data).encode(response.encoding))
+
+
+def utilities_mkdir(data: Dict[str, Any], response: Response) -> None:
     path = Path(data["targetPath"])
     if path.exists():
         response.status_code = 400

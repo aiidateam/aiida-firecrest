@@ -37,7 +37,6 @@ class Connection:
                 "client_id",
                 "client_secret",
                 "machine",
-                "scratch_path",
             }
         )
         self._info = info
@@ -46,7 +45,10 @@ class Connection:
     @property
     def transport(self) -> FirecrestTransport:
         """Get the transport."""
-        return FirecrestTransport(**self.info)
+        transport = FirecrestTransport(**self.info)
+        if "scratch_path" in self.info:
+            transport.chdir(self.info["scratch_path"])
+        return transport
 
     @property
     def client(self) -> f7t.Firecrest:
@@ -74,7 +76,7 @@ def main(connection, config):
 
 @main.command("parameters")
 @connection
-def parameters(connection):
+def parameters(connection: Connection):
     """Get the parameters that can be configured in environment files."""
     print(yaml.dump(connection.client.parameters()))
 
@@ -109,12 +111,38 @@ def system(connection: Connection, system: str):
     click.echo(yaml.dump(connection.client.system(system)))
 
 
+@main.command("cwd")
+@connection
+def cwd(connection: Connection):
+    """Get the current working directory."""
+    click.echo(connection.transport.getcwd())
+
+
 @main.command("ls")
-@click.argument("path")
+@click.argument("path", default=".")
 @connection
 def ls(connection: Connection, path: str):
     """List files in a path."""
-    click.echo(yaml.dump(connection.transport.listdir(path)))
+    # todo want to allow for '/' to prepend folders here?
+    click.echo(" ".join(connection.transport.listdir(path)))
+
+
+@main.command("stat")
+@click.argument("path")
+@connection
+def stat(connection: Connection, path: str):
+    """Get information about a file."""
+    click.echo(yaml.dump(connection.transport.stat(path)))
+
+
+@main.command("chmod")
+@click.argument("path")
+@click.argument("mode")
+@connection
+def chmod(connection: Connection, path: str, mode: str):
+    """Change the mode of a file."""
+    connection.transport.chmod(path, mode)
+    click.secho(f"Changed mode of {path} to {mode}", fg="green")
 
 
 @main.command("putfile")
@@ -122,6 +150,6 @@ def ls(connection: Connection, path: str):
 @click.argument("target_path")
 @connection
 def putfile(connection: Connection, source_path: str, target_path: str):
-    """List files in a path."""
+    """Upload file to the remote."""
     connection.transport.putfile(source_path, target_path)
     click.secho(f"Uploaded {source_path} to {target_path}", fg="green")

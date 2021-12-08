@@ -7,9 +7,10 @@
 # For further information please visit http://www.aiida.net               #
 ###########################################################################
 """Transport interface."""
+import os
 import posixpath
 from pathlib import Path, PurePosixPath
-from typing import Any, List, Optional, Tuple, Type, Union
+from typing import Any, List, NamedTuple, Optional, Tuple, Type, Union
 
 import firecrest as f7t
 from aiida.cmdline.params.options.overridable import OverridableOption
@@ -53,6 +54,18 @@ class FirecrestAuthorizationClass:
     @login_decorator
     def get_access_token(self):
         return self.keycloak.get_access_token()
+
+
+class StatResult(NamedTuple):
+    """Result of a stat call."""
+
+    st_mode: int  # protection bits,
+    # st_ino: int  # inode number,
+    # st_dev: int  # device,
+    # st_nlink: int  # number of hard links,
+    st_uid: int  # user id of owner,
+    st_gid: int  # group id of owner,
+    st_size: int  # size of file, in bytes,
 
 
 class FirecrestTransport(Transport):
@@ -130,6 +143,7 @@ class FirecrestTransport(Transport):
         self._cwd = PurePosixPath()
 
     def _get_path(self, path: str) -> str:
+        # TODO ensure all remote paths are manipulated with posixpath
         return posixpath.normpath(self._cwd.joinpath(path))
 
     def open(self):  # noqa: A003
@@ -143,7 +157,13 @@ class FirecrestTransport(Transport):
         return str(self._cwd)
 
     def chdir(self, path: str) -> None:
-        raise NotImplementedError
+        try:
+            self._client.file_type(self._machine, path)
+        except HeaderException as exc:
+            if "X-Invalid-Path" in exc.responses[-1].headers:
+                raise FileNotFoundError(path)
+            raise
+        self._cwd = PurePosixPath(path)
 
     def normalize(self, path="."):
         raise NotImplementedError
@@ -152,7 +172,7 @@ class FirecrestTransport(Transport):
         self._client.chmod(self._machine, self._get_path(path), mode=mode)
 
     def chown(self, path, uid: str, gid: str):
-        self._client.chmod(self._machine, self._get_path(path), owner=uid, group=gid)
+        self._client.chown(self._machine, self._get_path(path), owner=uid, group=gid)
 
     def copy(self, remotesource, remotedestination, dereference=False, recursive=True):
         raise NotImplementedError
@@ -175,8 +195,60 @@ class FirecrestTransport(Transport):
     def gettree(self, remotepath, localpath, *args, **kwargs):
         raise NotImplementedError
 
+    def path_exists(self, path: str) -> bool:
+        try:
+            self._client.file_type(self._machine, self._get_path(path))
+        except HeaderException as exc:
+            if "X-Invalid-Path" in exc.responses[-1].headers:
+                return False
+            raise
+        return True
+
     # TODO: once https://github.com/eth-cscs/firecrest/pull/133 is deployed,
-    # then this can be used for get_attribute, isdir, isfile, etc
+    # then this can be used for stat, get_attribute, isdir, isfile, etc
+
+    def _convert_st_mode(self, data: dict) -> int:
+        # created from `ls -l -A --time-style=+%Y-%m-%dT%H:%M:%S`, e.g.
+        # -rw-------  1 chrisjsewell staff 57 2021-12-02T10:42:00 file.txt
+        # type, permissions, # of links (not recorded), user, group, size, last_modified, name
+
+        ftype = {
+            "b": "0060",  # block device
+            "c": "0020",  # character device
+            "d": "0040",  # directory
+            "l": "0120",  # Symbolic link
+            "s": "0140",  # Socket.
+            "p": "0010",  # FIFO
+            "-": "0100",  # Regular file
+        }
+        p = data["permissions"]
+        r = lambda x: 4 if x == "r" else 0  # noqa: E731
+        w = lambda x: 2 if x == "w" else 0  # noqa: E731
+        x = lambda x: 1 if x == "x" else 0  # noqa: E731
+        p_int = (
+            ((r(p[0]) + w(p[1]) + x(p[2])) * 100)
+            + ((r(p[3]) + w(p[4]) + x(p[5])) * 10)
+            + ((r(p[6]) + w(p[7]) + x(p[8])) * 100)
+        )
+        mode = int(ftype[data["type"]] + str(p_int), 8)
+
+        return mode
+
+    def stat(self, path: str) -> dict:
+        """Retrieve information about a file on the remote system"""
+        # TODO lstat
+        dirname, filename = posixpath.split(self._get_path(path))
+        try:
+            output = self._client.list_files(self._machine, dirname, showhidden=True)
+        except HeaderException as exc:
+            if "X-Invalid-Path" in exc.responses[-1].headers:
+                raise FileNotFoundError(posixpath.join(dirname, filename))
+            raise
+        for data in output:
+            if data["name"] == filename:
+                data["mode"] = self._convert_st_mode(data)
+                return data
+        raise FileNotFoundError(posixpath.join(dirname, filename))
 
     def get_attribute(self, path):
         raise NotImplementedError
@@ -227,6 +299,11 @@ class FirecrestTransport(Transport):
         raise NotImplementedError
 
     def putfile(self, localpath: str, remotepath: str, *args, **kwargs):
+
+        # local checks
+        if not Path(localpath).is_absolute():
+            raise ValueError("The localpath must be an absolute path")
+
         # TODO handle large files (maybe use .parameters() to decide if file is large)
         # TODO pyfirecrest requires the remotepath to be a directory & takes the name from localpath
         remotepathlib = PurePosixPath(self._get_path(remotepath))
@@ -234,8 +311,28 @@ class FirecrestTransport(Transport):
         # note this allows overwriting
         self._client.simple_upload(self._machine, localpath, str(remotepathlib.parent))
 
-    def puttree(self, localpath, remotepath, *args, **kwargs):
-        raise NotImplementedError
+    def puttree(self, localpath: Union[str, Path], remotepath: str, *args, **kwargs):
+        localpath = Path(localpath)
+
+        # local checks
+        if not localpath.is_absolute():
+            raise ValueError("The localpath must be an absolute path")
+        if not localpath.exists():
+            raise OSError("The localpath does not exists")
+        if not localpath.is_dir():
+            raise ValueError(f"Input localpath is not a folder: {localpath}")
+
+        for dirpath, _, filenames in os.walk(localpath):
+            # Get the relative path
+            rel_folder = os.path.relpath(path=dirpath, start=localpath)
+
+            if not self.path_exists(os.path.join(remotepath, rel_folder)):
+                self.mkdir(os.path.join(remotepath, rel_folder))
+
+            for filename in filenames:
+                localfile_path = os.path.join(localpath, rel_folder, filename)
+                remotefile_path = os.path.join(remotepath, rel_folder, filename)
+                self.putfile(localfile_path, remotefile_path)
 
     def remove(self, path):
         raise NotImplementedError
@@ -254,12 +351,3 @@ class FirecrestTransport(Transport):
 
     def symlink(self, remotesource, remotedestination):
         raise NotImplementedError
-
-    def path_exists(self, path: str) -> bool:
-        try:
-            self._client.file_type(self._machine, self._get_path(path))
-        except HeaderException as exc:
-            if "X-Invalid-Path" in exc.responses[-1].headers:
-                return False
-            raise
-        return True
