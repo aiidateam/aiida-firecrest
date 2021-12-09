@@ -32,16 +32,9 @@ Options:
   --help         Show this message and exit.
 
 Commands:
-  chmod       Change the mode of a file.
-  cwd         Get the current working directory.
-  ls          List files in a path.
-  parameters  Get parameters that can be configured in environment files.
-  putfile     Upload file to the remote.
-  service     Information about a service.
-  services    List available services.
-  stat        Get information about a file.
-  system      Information about a system.
-  systems     List available systems.
+  fs      File system operations.
+  slurm   Slurm operations.
+  stat    Status operations.
 ```
 
 The configuration file should look like this:
@@ -59,6 +52,54 @@ The configuration file should look like this:
 
 `scratch_path` is optional.
 If specified, all operations will be relative to this path.
+
+```console
+$ aiida-firecrest-cli stat
+Usage: aiida-firecrest-cli stat [OPTIONS] COMMAND [ARGS]...
+
+  Status operations.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  parameters  Get parameters that can be configured in environment files.
+  service     Information about a service.
+  services    List available services.
+  system      Information about a system.
+  systems     List available systems.
+```
+
+```console
+$ aiida-firecrest-cli fs
+Usage: aiida-firecrest-cli fs [OPTIONS] COMMAND [ARGS]...
+
+  File system operations.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  cat      Get the contents of a file.
+  chmod    Change the mode of a file.
+  cwd      Get the current working directory.
+  ls       List files in a path.
+  putfile  Upload file to the remote.
+  stat     Get information about a file.
+```
+
+```console
+$ aiida-firecrest-cli slurm
+Usage: aiida-firecrest-cli slurm [OPTIONS] COMMAND [ARGS]...
+
+  Slurm operations.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  sacct  Retrieves information about submitted jobs.
+```
 
 ## Code Style
 

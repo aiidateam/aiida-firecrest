@@ -299,6 +299,7 @@ class FirecrestTransport(Transport):
         self._client.simple_download(
             self._machine, self._get_path(remotepath), localpath
         )
+        # TODO use client.checksum?
 
     def put(self, localpath, remotepath, *args, **kwargs):
         raise NotImplementedError

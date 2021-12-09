@@ -75,21 +75,36 @@ def main(connection, config):
         connection.set_path(Path.cwd() / ".firecrest-config.json")
 
 
-@main.command("parameters")
+@main.group("stat")
+def status() -> None:
+    """Status operations."""
+
+
+@main.group("fs")
+def fs() -> None:
+    """File system operations."""
+
+
+@main.group("slurm")
+def slurm() -> None:
+    """Slurm operations."""
+
+
+@status.command("parameters")
 @connection
 def parameters(connection: Connection):
     """Get parameters that can be configured in environment files."""
     print(yaml.dump(connection.client.parameters()))
 
 
-@main.command("services")
+@status.command("services")
 @connection
 def services(connection: Connection):
     """List available services."""
     click.echo(yaml.dump(connection.client.all_services()))
 
 
-@main.command("service")
+@status.command("service")
 @click.argument("service")
 @connection
 def service(connection: Connection, service: str):
@@ -97,14 +112,14 @@ def service(connection: Connection, service: str):
     click.echo(yaml.dump(connection.client.service(service)))
 
 
-@main.command("systems")
+@status.command("systems")
 @connection
 def systems(connection: Connection):
     """List available systems."""
     click.echo(yaml.dump(connection.client.all_systems()))
 
 
-@main.command("system")
+@status.command("system")
 @click.argument("system")
 @connection
 def system(connection: Connection, system: str):
@@ -112,14 +127,14 @@ def system(connection: Connection, system: str):
     click.echo(yaml.dump(connection.client.system(system)))
 
 
-@main.command("cwd")
+@fs.command("cwd")
 @connection
 def cwd(connection: Connection):
     """Get the current working directory."""
     click.echo(connection.transport.getcwd())
 
 
-@main.command("ls")
+@fs.command("ls")
 @click.argument("path", default=".")
 @connection
 def ls(connection: Connection, path: str):
@@ -128,7 +143,7 @@ def ls(connection: Connection, path: str):
     click.echo(" ".join(connection.transport.listdir(path)))
 
 
-@main.command("stat")
+@fs.command("stat")
 @click.argument("path")
 @connection
 def stat(connection: Connection, path: str):
@@ -136,7 +151,7 @@ def stat(connection: Connection, path: str):
     click.echo(yaml.dump(connection.transport.stat(path)))
 
 
-@main.command("chmod")
+@fs.command("chmod")
 @click.argument("path")
 @click.argument("mode")
 @connection
@@ -146,7 +161,7 @@ def chmod(connection: Connection, path: str, mode: str):
     click.secho(f"Changed mode of {path} to {mode}", fg="green")
 
 
-@main.command("putfile")
+@fs.command("putfile")
 @click.argument("source_path")
 @click.argument("target_path")
 @connection
@@ -156,7 +171,7 @@ def putfile(connection: Connection, source_path: str, target_path: str):
     click.secho(f"Uploaded {source_path} to {target_path}", fg="green")
 
 
-@main.command("cat")
+@fs.command("cat")
 @click.argument("path")
 @connection
 def cat(connection: Connection, path: str):
@@ -164,3 +179,10 @@ def cat(connection: Connection, path: str):
     with tempfile.NamedTemporaryFile() as f:
         connection.transport.getfile(path, f.name)
         click.echo(f.read())
+
+
+@slurm.command("sacct")
+@connection
+def sacct(connection: Connection):
+    """Retrieves information about submitted jobs."""
+    click.echo(yaml.dump(connection.client.poll(connection.info["machine"])))
