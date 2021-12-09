@@ -1,5 +1,6 @@
 """Simple CLI for FireCrest."""
 import json
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -153,3 +154,13 @@ def putfile(connection: Connection, source_path: str, target_path: str):
     """Upload file to the remote."""
     connection.transport.putfile(source_path, target_path)
     click.secho(f"Uploaded {source_path} to {target_path}", fg="green")
+
+
+@main.command("cat")
+@click.argument("path")
+@connection
+def cat(connection: Connection, path: str):
+    """Get the contents of a file."""
+    with tempfile.NamedTemporaryFile() as f:
+        connection.transport.getfile(path, f.name)
+        click.echo(f.read())

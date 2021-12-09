@@ -293,14 +293,17 @@ class FirecrestTransport(Transport):
     def mkdir(self, path: str, ignore_existing: bool = False) -> None:
         self._client.mkdir(self._machine, self._get_path(path), p=False)
 
-    def getfile(self, remotepath, localpath, *args, **kwargs):
-        raise NotImplementedError
+    def getfile(self, remotepath: str, localpath: str, *args, **kwargs):
+        # TODO simple_download should maybe allow to just write to handle
+        # TODO handle large files (maybe use .parameters() to decide if file is large)
+        self._client.simple_download(
+            self._machine, self._get_path(remotepath), localpath
+        )
 
     def put(self, localpath, remotepath, *args, **kwargs):
         raise NotImplementedError
 
     def putfile(self, localpath: str, remotepath: str, *args, **kwargs):
-
         # local checks
         if not Path(localpath).is_absolute():
             raise ValueError("The localpath must be an absolute path")
