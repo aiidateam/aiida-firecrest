@@ -1,5 +1,7 @@
 """Simple CLI for FireCrest."""
 import json
+import os
+import posixpath
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -161,14 +163,39 @@ def chmod(connection: Connection, path: str, mode: str):
     click.secho(f"Changed mode of {path} to {mode}", fg="green")
 
 
+@fs.command("rm")
+@click.argument("path")
+@connection
+def rm(connection: Connection, path: str):
+    """Remove a file or directory."""
+    connection.transport.remove(path)
+    click.secho(f"Removed {path}", fg="green")
+
+
 @fs.command("putfile")
 @click.argument("source_path")
 @click.argument("target_path")
 @connection
 def putfile(connection: Connection, source_path: str, target_path: str):
     """Upload file to the remote."""
-    connection.transport.putfile(source_path, target_path)
+    connection.transport.putfile(os.path.abspath(source_path), target_path)
     click.secho(f"Uploaded {source_path} to {target_path}", fg="green")
+
+
+@fs.command("putfile-lg")
+@click.argument("source_path")
+@click.argument("target_folder")
+@connection
+def putfile_lg(connection: Connection, source_path: str, target_folder: str):
+    """Upload file to the remote."""
+    info = connection.info
+    if "scratch_path" in info:
+        target_folder = posixpath.join(info["scratch_path"], target_folder)
+    data = connection.client.external_upload(
+        info["machine"], source_path, target_folder
+    )
+    click.echo(str(data.object_storage_data))
+    # TODO upload and polling
 
 
 @fs.command("cat")

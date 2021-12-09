@@ -167,7 +167,7 @@ class FirecrestTransport(Transport):
         self._cwd = PurePosixPath(path)
 
     def normalize(self, path="."):
-        raise NotImplementedError
+        return posixpath.normpath(path)
 
     def chmod(self, path: str, mode: str):
         self._client.chmod(self._machine, self._get_path(path), mode=mode)
@@ -179,15 +179,13 @@ class FirecrestTransport(Transport):
         raise NotImplementedError
 
     def copyfile(self, remotesource, remotedestination, dereference=False):
-        raise NotImplementedError
+        self._client.copy(
+            self._machine,
+            self._get_path(remotesource),
+            self._get_path(remotedestination),
+        )
 
     def copytree(self, remotesource, remotedestination, dereference=False):
-        raise NotImplementedError
-
-    def _exec_command_internal(self, command, **kwargs):
-        raise NotImplementedError
-
-    def exec_command_wait_bytes(self, command, stdin=None, **kwargs):
         raise NotImplementedError
 
     def get(self, remotepath, localpath, *args, **kwargs):
@@ -302,7 +300,15 @@ class FirecrestTransport(Transport):
         # TODO use client.checksum?
 
     def put(self, localpath, remotepath, *args, **kwargs):
-        raise NotImplementedError
+        # TODO ssh does a lot more
+        if os.path.isdir(localpath):
+            self.puttree(localpath, remotepath)
+        elif os.path.isfile(localpath):
+            if self.isdir(remotepath):
+                remote = os.path.join(remotepath, os.path.split(localpath)[1])
+                self.putfile(localpath, remote)
+            else:
+                self.putfile(localpath, remotepath)
 
     def putfile(self, localpath: str, remotepath: str, *args, **kwargs):
         # local checks
@@ -340,20 +346,32 @@ class FirecrestTransport(Transport):
                 remotefile_path = os.path.join(remotepath, rel_folder, filename)
                 self.putfile(localfile_path, remotefile_path)
 
-    def remove(self, path):
+    def remove(self, path: str):
+        self._client.simple_delete(self._machine, self._get_path(path))
+
+    def rename(self, oldpath: str, newpath: str):
+        self._client.rename(
+            self._machine, self._get_path(oldpath), self._get_path(newpath)
+        )
+
+    def rmdir(self, path: str):
+        self._client.simple_delete(self._machine, self._get_path(path))
+
+    def rmtree(self, path: str):
+        self._client.simple_delete(self._machine, self._get_path(path))
+
+    def symlink(self, remotesource: str, remotedestination: str):
+        self._client.symlink(
+            self._machine,
+            self._get_path(remotesource),
+            self._get_path(remotedestination),
+        )
+
+    def gotocomputer_command(self, remotedir: str):
         raise NotImplementedError
 
-    def rename(self, oldpath, newpath):
+    def _exec_command_internal(self, command, **kwargs):
         raise NotImplementedError
 
-    def rmdir(self, path):
-        raise NotImplementedError
-
-    def rmtree(self, path):
-        raise NotImplementedError
-
-    def gotocomputer_command(self, remotedir):
-        raise NotImplementedError
-
-    def symlink(self, remotesource, remotedestination):
+    def exec_command_wait_bytes(self, command, stdin=None, **kwargs):
         raise NotImplementedError
