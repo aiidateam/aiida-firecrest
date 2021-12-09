@@ -311,6 +311,7 @@ class FirecrestTransport(Transport):
 
         # TODO handle large files (maybe use .parameters() to decide if file is large)
         # TODO pyfirecrest requires the remotepath to be a directory & takes the name from localpath
+        # (see issue #5)
         remotepathlib = PurePosixPath(self._get_path(remotepath))
         assert Path(localpath).name == remotepathlib.name
         # note this allows overwriting

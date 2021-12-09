@@ -1,5 +1,4 @@
 """Simple CLI for FireCrest."""
-import itertools
 import json
 import tempfile
 from pathlib import Path
@@ -185,16 +184,25 @@ def cat(connection: Connection, path: str):
 @slurm.command("sacct")
 @connection
 def sacct(connection: Connection):
-    """Retrieve information about submitted jobs."""
+    """Retrieve information for all jobs."""
     click.echo(yaml.dump(connection.client.poll(connection.info["machine"])))
 
 
 @slurm.command("squeue")
 @connection
 def squeue(connection: Connection):
-    """Retrieves information from all jobs."""
-    json_response = connection.client._squeue_request(connection.info["machine"])
-    output = connection.client._poll_tasks(
-        json_response["task_id"], "200", itertools.cycle([1, 5, 10])
+    """Retrieves information for queued jobs."""
+    click.echo(yaml.dump(connection.client.poll_active(connection.info["machine"])))
+
+
+@slurm.command("submit")
+@click.argument("path")
+@click.option("--is-remote", is_flag=True, help="The path is on the remote.")
+@connection
+def submit(connection: Connection, path: str, is_remote: bool):
+    """Submit a job script."""
+    click.echo(
+        connection.client.submit(
+            connection.info["machine"], path, local_file=not is_remote
+        )
     )
-    click.echo(yaml.dump(output))
