@@ -1,4 +1,5 @@
 """Simple CLI for FireCrest."""
+import itertools
 import json
 import tempfile
 from pathlib import Path
@@ -184,5 +185,16 @@ def cat(connection: Connection, path: str):
 @slurm.command("sacct")
 @connection
 def sacct(connection: Connection):
-    """Retrieves information about submitted jobs."""
+    """Retrieve information about submitted jobs."""
     click.echo(yaml.dump(connection.client.poll(connection.info["machine"])))
+
+
+@slurm.command("squeue")
+@connection
+def squeue(connection: Connection):
+    """Retrieves information from all jobs."""
+    json_response = connection.client._squeue_request(connection.info["machine"])
+    output = connection.client._poll_tasks(
+        json_response["task_id"], "200", itertools.cycle([1, 5, 10])
+    )
+    click.echo(yaml.dump(output))

@@ -98,7 +98,8 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  sacct  Retrieves information about submitted jobs.
+  sacct   Retrieves information about submitted jobs.
+  squeue  Retrieves information from all jobs.
 ```
 
 ## Code Style
