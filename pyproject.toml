@@ -28,7 +28,6 @@ dependencies = [
     "click",
     "pyfirecrest@git+git://github.com/ekouts/pyfirecrest@8f260c3a43220cf1304d679a33457e8eb096c5a1#egg=pyfirecrest",
     "pyyaml",
-    "typing-extensions;python_version<'3.8'",
 ]
 
 [project.urls]

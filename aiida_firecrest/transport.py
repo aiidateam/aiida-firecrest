@@ -10,7 +10,7 @@
 import os
 import posixpath
 from pathlib import Path, PurePosixPath
-from typing import Any, List, NamedTuple, Optional, Tuple, Type, Union
+from typing import Any, List, NamedTuple, Optional, Tuple, Type, TypedDict, Union
 
 import firecrest as f7t
 from aiida.cmdline.params.options.overridable import OverridableOption
@@ -18,11 +18,6 @@ from aiida.cmdline.params.types.path import AbsolutePathOrEmptyParamType
 from aiida.transports import Transport
 from click.types import ParamType
 from firecrest.FirecrestException import HeaderException
-
-try:
-    from typing import TypedDict  # type: ignore
-except ImportError:
-    from typing_extensions import TypedDict
 
 
 class ValidAuthOption(TypedDict, total=False):  # type: ignore
