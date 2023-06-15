@@ -35,27 +35,6 @@ class ValidAuthOption(TypedDict, total=False):  # type: ignore
     help: str  # noqa: A003
 
 
-def login_decorator(func):
-    def _decorator(self, *args, **kwargs):
-        return self.keycloak.account_login(func)(self, *args, **kwargs)
-
-    return _decorator
-
-
-class FirecrestAuthorizationClass:
-    def __init__(self, token_uri: str, client_id: str, client_secret: str):
-        self.keycloak = f7t.ClientCredentialsAuth(
-            client_id,
-            client_secret,
-            token_uri,
-        )
-
-    # TODO maybe only check if token is valid on Transport.open? (rather than on every call)
-    @login_decorator
-    def get_access_token(self):
-        return self.keycloak.get_access_token()
-
-
 class StatResult(NamedTuple):
     """Result of a stat call."""
 
@@ -135,9 +114,7 @@ class FirecrestTransport(Transport):
 
         self._client = f7t.Firecrest(
             firecrest_url=self._url,
-            authorization=FirecrestAuthorizationClass(
-                token_uri=self._token_uri, client_id=client_id, client_secret=secret
-            ),
+            authorization=f7t.ClientCredentialsAuth(client_id, secret, token_uri),
         )
 
         self._cwd = PurePosixPath()

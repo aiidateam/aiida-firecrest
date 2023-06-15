@@ -43,6 +43,7 @@ class FirecrestMockServer:
         self._client_id = "test_client_id"
         self._client_secret = "test_client_secret"
         self._token_url = "https://test.auth.com/token"
+        self._token_url_parsed = urlparse(self._token_url)
 
     @property
     def scratch(self) -> Path:
@@ -71,11 +72,26 @@ class FirecrestMockServer:
         response.encoding = "utf-8"
         response.url = url if isinstance(url, str) else url.decode("utf-8")
         parsed = urlparse(response.url)
+        endpoint = parsed.path
+
+        if parsed.netloc == self._token_url_parsed.netloc:
+            if endpoint != "/token":
+                raise requests.exceptions.InvalidURL(f"Unknown endpoint: {endpoint}")
+            response.status_code = 200
+            response.raw = io.BytesIO(
+                json_dumps(
+                    {
+                        "access_token": "test_access_token",
+                        "expires_in": 3600,
+                    }
+                ).encode(response.encoding)
+            )
+            return response
+
         if parsed.netloc != self._url_parsed.netloc:
             raise requests.exceptions.InvalidURL(
                 f"{parsed.netloc} != {self._url_parsed.netloc}"
             )
-        endpoint = parsed.path
 
         if endpoint == "/utilities/file":
             utilities_file(params or {}, data or {}, response)
