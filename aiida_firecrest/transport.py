@@ -406,7 +406,6 @@ class FirecrestTransport(Transport):
         result = self._client.poll_active(self._machine, jobs)
         job_list = []
         for raw_result in result:
-
             if user is not None and raw_result["user"] != user:
                 continue
 
