@@ -130,6 +130,7 @@ dmypy.json
 
 .DS_Store
 .vscode/
+.demo-server/
 .firecrest-config.json
 
 example.submit

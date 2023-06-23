@@ -11,10 +11,23 @@ import requests
 from requests.models import Response
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        "--firecrest-config", action="store", help="Path to firecrest config JSON file"
-    )
+@pytest.fixture(scope="function")
+def firecrest_server(request, monkeypatch, tmp_path: Path):
+    """A fixture which provides a mock Firecrest server to test against."""
+    config_path = request.config.getoption("--firecrest-config")
+    if config_path is not None:
+        # if given, use this config
+        with open(config_path) as handle:
+            config = json_load(handle)
+        # TODO how to ensure clean server
+        yield FirecrestConfig(**config)
+    else:
+        # otherwise use mock server
+        server = FirecrestMockServer(tmp_path)
+        monkeypatch.setattr(requests, "get", server.mock_request)
+        monkeypatch.setattr(requests, "post", server.mock_request)
+        monkeypatch.setattr(requests, "put", server.mock_request)
+        yield server.config
 
 
 @dataclasses.dataclass
@@ -175,21 +188,3 @@ def utilities_upload(
     path.write_bytes(files["file"].read())
     response.status_code = 201
     response.raw = io.BytesIO(b"{}")
-
-
-@pytest.fixture(scope="function")
-def firecrest_server(request, monkeypatch, tmp_path: Path):
-    """A fixture which provides a mock Firecrest server to test against."""
-    config_path = request.config.getoption("--firecrest-config")
-    if config_path is not None:
-        # if given, use this config
-        with open(config_path) as handle:
-            config = json_load(handle)
-        yield FirecrestConfig(**config)
-    else:
-        # otherwise use mock server
-        server = FirecrestMockServer(tmp_path)
-        monkeypatch.setattr(requests, "get", server.mock_request)
-        monkeypatch.setattr(requests, "post", server.mock_request)
-        monkeypatch.setattr(requests, "put", server.mock_request)
-        yield server.config
