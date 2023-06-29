@@ -47,3 +47,4 @@ repos:
       files: ^(aiida_firecrest/.*py)$
       additional_dependencies:
       - "types-PyYAML"
+      - "types-requests"
