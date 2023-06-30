@@ -22,12 +22,12 @@ jobs:
         python-version: ["3.9"]
         firecrest-version: ["v1.13.0"]
 
-    services:
-     rabbitmq:
-        image: rabbitmq:3.8.14-management
-        ports:
-          - 5672:5672
-          - 15672:15672
+    # services:
+    #  rabbitmq:
+    #     image: rabbitmq:3.8.14-management
+    #     ports:
+    #       - 5672:5672
+    #       - 15672:15672
 
     steps:
     - uses: actions/checkout@v3
