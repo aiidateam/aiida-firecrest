@@ -28,7 +28,7 @@ class FirecrestConfig:
 
 
 class FirecrestMockServer:
-    """A mock server to imitate Firecrest (v1.12.0).
+    """A mock server to imitate Firecrest (v1.13.0).
 
     This minimally mimics accessing the filesystem and submitting jobs,
     enough to make tests pass, without having to run a real Firecrest server.
@@ -53,6 +53,8 @@ class FirecrestMockServer:
 
         self._task_id_counter = 0
         self._tasks: dict[str, Task] = {}
+
+        self.max_size_bytes = 5 * 1024 * 1024
 
     @property
     def scratch(self) -> Path:
@@ -105,27 +107,27 @@ class FirecrestMockServer:
         if endpoint == "/utilities/whoami":
             add_success_response(response, 200, self._username)
         elif endpoint == "/utilities/stat":
-            utilities_stat(params or {}, response)
+            self.utilities_stat(params or {}, response)
         elif endpoint == "/utilities/file":
-            utilities_file(params or {}, response)
+            self.utilities_file(params or {}, response)
         elif endpoint == "/utilities/ls":
-            utilities_ls(params or {}, response)
+            self.utilities_ls(params or {}, response)
         elif endpoint == "/utilities/symlink":
-            utilities_symlink(data or {}, response)
+            self.utilities_symlink(data or {}, response)
         elif endpoint == "/utilities/mkdir":
-            utilities_mkdir(data or {}, response)
+            self.utilities_mkdir(data or {}, response)
         elif endpoint == "/utilities/rm":
-            utilities_rm(data or {}, response)
+            self.utilities_rm(data or {}, response)
         elif endpoint == "/utilities/copy":
-            utilities_copy(data or {}, response)
+            self.utilities_copy(data or {}, response)
         elif endpoint == "/utilities/chmod":
-            utilities_chmod(data or {}, response)
+            self.utilities_chmod(data or {}, response)
         # elif endpoint == "/utilities/chown":
         #     utilities_chown(data or {}, response)
         elif endpoint == "/utilities/upload":
-            utilities_upload(data or {}, files or {}, response)
+            self.utilities_upload(data or {}, files or {}, response)
         elif endpoint == "/utilities/download":
-            utilities_download(params or {}, response)
+            self.utilities_download(params or {}, response)
         elif endpoint == "/compute/jobs/path":
             self.compute_jobs_path(data or {}, response)
         elif endpoint == "/compute/jobs":
@@ -147,6 +149,276 @@ class FirecrestMockServer:
         """Generate a new SLURM job ID."""
         self._slurm_job_id_counter += 1
         return f"{self._slurm_job_id_counter}"
+
+    def compute_jobs(self, params: dict[str, Any], response: Response) -> None:
+        # TODO pageSize pageNumber
+        jobs: None | list[str] = params["jobs"].split(",") if "jobs" in params else None
+        task_id = self.new_task_id()
+        self._tasks[task_id] = ActiveSchedulerJobsTask(task_id=task_id, jobs=jobs)
+        add_json_response(
+            response,
+            200,
+            {
+                "success": "Task created",
+                "task_id": task_id,
+                "task_url": "notset",
+            },
+        )
+
+    def compute_jobs_path(self, data: dict[str, Any], response: Response) -> Response:
+        script_path = Path(data["targetPath"])
+        if not script_path.is_file():
+            return add_json_response(
+                response,
+                400,
+                {"description": "Failed to submit job", "data": "File does not exist"},
+                {"X-Invalid-Path": f"{script_path} is an invalid path."},
+            )
+
+        job_id = self.new_slurm_job_id()
+
+        # read the file
+        script_content = script_path.read_text("utf8")
+
+        # TODO this could be more rigorous
+
+        # check that the first line is a shebang
+        if not script_content.startswith("#!/bin/bash"):
+            return add_json_response(
+                response,
+                400,
+                {
+                    "description": "Finished with errors",
+                    "data": "First line must be a shebang `#!/bin/bash`",
+                },
+            )
+
+        # get all sbatch options (see https://slurm.schedmd.com/sbatch.html)
+        sbatch_options: dict[str, Any] = {}
+
+        for line in script_content.splitlines():
+            if not line.startswith("#SBATCH"):
+                continue
+            arg = line[7:].strip().split("=", 1)
+            if len(arg) == 1:
+                assert arg[0].startswith("--"), f"Invalid sbatch option: {arg[0]}"
+                sbatch_options[arg[0][2:]] = True
+            elif len(arg) == 2:
+                assert arg[0].startswith("--"), f"Invalid sbatch option: {arg[0]}"
+                sbatch_options[arg[0][2:]] = arg[1].strip()
+
+        # set stdout and stderror file
+        out_file = error_file = "slurm-%j.out"
+        if "output" in sbatch_options:
+            out_file = sbatch_options["output"]
+        if "error" in sbatch_options:
+            error_file = sbatch_options["error"]
+        out_file = out_file.replace("%j", job_id)
+        error_file = error_file.replace("%j", job_id)
+
+        # we now just run the job straight away and blocking, no scheduling
+        # run the script in a subprocess, in the script's directory
+        # pipe stdout and stderr to the slurm output file
+        script_path.chmod(0o755)  # make sure the script is executable
+        if out_file == error_file:
+            with open(script_path.parent / out_file, "w") as out:
+                subprocess.run(
+                    [str(script_path)],
+                    cwd=script_path.parent,
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                )
+        else:
+            with open(script_path.parent / out_file, "w") as out, open(
+                script_path.parent / error_file, "w"
+            ) as err:
+                subprocess.run(
+                    [str(script_path)], cwd=script_path.parent, stdout=out, stderr=err
+                )
+
+        task_id = self.new_task_id()
+        self._tasks[task_id] = ScheduledJobTask(
+            task_id=task_id,
+            job_id=job_id,
+            script_path=script_path,
+            stdout_path=script_path.parent / out_file,
+            stderr_path=script_path.parent / error_file,
+        )
+        self._slurm_jobs[job_id] = {}
+        return add_json_response(
+            response,
+            201,
+            {"success": "Task created", "task_url": "notset", "task_id": task_id},
+        )
+
+    def storage_xfer_external_upload(
+        self, data: dict[str, Any], response: Response
+    ) -> None:
+        source = Path(data["sourcePath"])
+        target = Path(data["targetPath"])
+        if not target.parent.exists():
+            response.status_code = 400
+            response.headers["X-Not-Found"] = ""
+            return
+        task_id = self.new_task_id()
+        self._tasks[task_id] = StorageXferExternalUploadTask(task_id, source, target)
+        add_json_response(
+            response,
+            201,
+            {
+                "success": "Task created",
+                "task_id": task_id,
+                "task_url": "...",
+            },
+        )
+
+    def utilities_file(self, params: dict[str, Any], response: Response) -> None:
+        path = Path(params["targetPath"])
+        if not path.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        add_success_response(response, 200, "directory" if path.is_dir() else "text")
+
+    def utilities_symlink(self, data: dict[str, Any], response: Response) -> None:
+        target = Path(data["targetPath"])
+        link = Path(data["linkPath"])
+        if not target.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        if link.exists():
+            response.status_code = 400
+            response.headers["X-Exists"] = ""
+            return
+        link.symlink_to(target)
+        add_success_response(response, 201)
+
+    def utilities_stat(self, params: dict[str, Any], response: Response) -> None:
+        path = Path(params["targetPath"])
+        dereference = params.get("dereference", False)
+        if not path.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        result = path.stat() if dereference else path.lstat()
+        add_success_response(
+            response,
+            200,
+            {
+                "mode": result.st_mode,
+                "uid": result.st_uid,
+                "gid": result.st_gid,
+                "size": result.st_size,
+                "atime": result.st_atime,
+                "mtime": result.st_mtime,
+                "ctime": result.st_ctime,
+                "nlink": result.st_nlink,
+                "ino": result.st_ino,
+                "dev": result.st_dev,
+            },
+        )
+
+    def utilities_ls(self, params: dict[str, Any], response: Response) -> None:
+        path = Path(params["targetPath"])
+        if not path.is_dir():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        add_success_response(response, 200, [{"name": f.name} for f in path.iterdir()])
+
+    def utilities_chmod(self, data: dict[str, Any], response: Response) -> None:
+        path = Path(data["targetPath"])
+        if not path.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        path.chmod(int(data["mode"], 8))
+        add_success_response(response, 200)
+
+    def utilities_mkdir(self, data: dict[str, Any], response: Response) -> None:
+        path = Path(data["targetPath"])
+        if path.exists():
+            response.status_code = 400
+            response.headers["X-Exists"] = ""
+            return
+        path.mkdir(parents=data.get("p", False))
+        add_success_response(response, 201)
+
+    def utilities_rm(self, data: dict[str, Any], response: Response) -> None:
+        path = Path(data["targetPath"])
+        if not path.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        path.unlink()
+        add_success_response(response, 204)
+
+    def utilities_copy(self, data: dict[str, Any], response: Response) -> None:
+        source = Path(data["sourcePath"])
+        target = Path(data["targetPath"])
+        if not source.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        if target.exists():
+            response.status_code = 400
+            response.headers["X-Exists"] = ""
+            return
+        if source.is_dir():
+            shutil.copytree(source, target)
+        else:
+            shutil.copy2(source, target)
+        add_success_response(response, 201)
+
+    def utilities_upload(
+        self,
+        data: dict[str, Any],
+        files: dict[str, tuple[str, BinaryIO]],
+        response: Response,
+    ) -> None:
+        # TODO files["file"] can be a tuple (name, stream) or just a stream with a name
+        fname, fbuffer = files["file"]
+        path = Path(data["targetPath"]) / fname
+        if not path.parent.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+
+        fbytes = fbuffer.read()
+        if len(fbytes) > self.max_size_bytes:
+            add_json_response(
+                response,
+                413,
+                {
+                    "description": f"Failed to upload file. The file is over {self.max_size_bytes} bytes"
+                },
+            )
+            return
+
+        path.write_bytes(fbytes)
+        add_success_response(response, 201)
+
+    def utilities_download(self, params: dict[str, Any], response: Response) -> None:
+        path = Path(params["sourcePath"])
+        if not path.is_file():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+
+        if path.lstat().st_size >= self.max_size_bytes:
+            add_json_response(
+                response,
+                400,
+                {
+                    "description": f"Failed to download file. The file is over {self.max_size_bytes} bytes"
+                },
+                {"X-Size-Limit": "File size exceeds limit"},
+            )
+            return
+
+        response.status_code = 200
+        response.raw = io.BytesIO(path.read_bytes())
 
     def handle_task(self, task_id: str, response: Response) -> Response:
         if task_id not in self._tasks:
@@ -304,128 +576,6 @@ class FirecrestMockServer:
 
         raise NotImplementedError(f"Unknown task type: {type(task)}")
 
-    def compute_jobs(self, params: dict[str, Any], response: Response) -> None:
-        # TODO pageSize pageNumber
-        jobs: None | list[str] = params["jobs"].split(",") if "jobs" in params else None
-        task_id = self.new_task_id()
-        self._tasks[task_id] = ActiveSchedulerJobsTask(task_id=task_id, jobs=jobs)
-        add_json_response(
-            response,
-            200,
-            {
-                "success": "Task created",
-                "task_id": task_id,
-                "task_url": "notset",
-            },
-        )
-
-    def compute_jobs_path(self, data: dict[str, Any], response: Response) -> Response:
-        script_path = Path(data["targetPath"])
-        if not script_path.is_file():
-            return add_json_response(
-                response,
-                400,
-                {"description": "Failed to submit job", "data": "File does not exist"},
-                {"X-Invalid-Path": f"{script_path} is an invalid path."},
-            )
-
-        job_id = self.new_slurm_job_id()
-
-        # read the file
-        script_content = script_path.read_text("utf8")
-
-        # TODO this could be more rigorous
-
-        # check that the first line is a shebang
-        if not script_content.startswith("#!/bin/bash"):
-            return add_json_response(
-                response,
-                400,
-                {
-                    "description": "Finished with errors",
-                    "data": "First line must be a shebang `#!/bin/bash`",
-                },
-            )
-
-        # get all sbatch options (see https://slurm.schedmd.com/sbatch.html)
-        sbatch_options: dict[str, Any] = {}
-
-        for line in script_content.splitlines():
-            if not line.startswith("#SBATCH"):
-                continue
-            arg = line[7:].strip().split("=", 1)
-            if len(arg) == 1:
-                assert arg[0].startswith("--"), f"Invalid sbatch option: {arg[0]}"
-                sbatch_options[arg[0][2:]] = True
-            elif len(arg) == 2:
-                assert arg[0].startswith("--"), f"Invalid sbatch option: {arg[0]}"
-                sbatch_options[arg[0][2:]] = arg[1].strip()
-
-        # set stdout and stderror file
-        out_file = error_file = "slurm-%j.out"
-        if "output" in sbatch_options:
-            out_file = sbatch_options["output"]
-        if "error" in sbatch_options:
-            error_file = sbatch_options["error"]
-        out_file = out_file.replace("%j", job_id)
-        error_file = error_file.replace("%j", job_id)
-
-        # we now just run the job straight away and blocking, no scheduling
-        # run the script in a subprocess, in the script's directory
-        # pipe stdout and stderr to the slurm output file
-        script_path.chmod(0o755)  # make sure the script is executable
-        if out_file == error_file:
-            with open(script_path.parent / out_file, "w") as out:
-                subprocess.run(
-                    [str(script_path)],
-                    cwd=script_path.parent,
-                    stdout=out,
-                    stderr=subprocess.STDOUT,
-                )
-        else:
-            with open(script_path.parent / out_file, "w") as out, open(
-                script_path.parent / error_file, "w"
-            ) as err:
-                subprocess.run(
-                    [str(script_path)], cwd=script_path.parent, stdout=out, stderr=err
-                )
-
-        task_id = self.new_task_id()
-        self._tasks[task_id] = ScheduledJobTask(
-            task_id=task_id,
-            job_id=job_id,
-            script_path=script_path,
-            stdout_path=script_path.parent / out_file,
-            stderr_path=script_path.parent / error_file,
-        )
-        self._slurm_jobs[job_id] = {}
-        return add_json_response(
-            response,
-            201,
-            {"success": "Task created", "task_url": "notset", "task_id": task_id},
-        )
-
-    def storage_xfer_external_upload(
-        self, data: dict[str, Any], response: Response
-    ) -> None:
-        source = Path(data["sourcePath"])
-        target = Path(data["targetPath"])
-        if not target.parent.exists():
-            response.status_code = 400
-            response.headers["X-Not-Found"] = ""
-            return
-        task_id = self.new_task_id()
-        self._tasks[task_id] = StorageXferExternalUploadTask(task_id, source, target)
-        add_json_response(
-            response,
-            201,
-            {
-                "success": "Task created",
-                "task_id": task_id,
-                "task_url": "...",
-            },
-        )
-
 
 @dataclass
 class Task:
@@ -476,147 +626,3 @@ def add_success_response(
             "output": output,
         },
     )
-
-
-def utilities_file(params: dict[str, Any], response: Response) -> None:
-    path = Path(params["targetPath"])
-    if not path.exists():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-    add_success_response(response, 200, "directory" if path.is_dir() else "text")
-
-
-def utilities_symlink(data: dict[str, Any], response: Response) -> None:
-    target = Path(data["targetPath"])
-    link = Path(data["linkPath"])
-    if not target.exists():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-    if link.exists():
-        response.status_code = 400
-        response.headers["X-Exists"] = ""
-        return
-    link.symlink_to(target)
-    add_success_response(response, 201)
-
-
-def utilities_stat(params: dict[str, Any], response: Response) -> None:
-    path = Path(params["targetPath"])
-    dereference = params.get("dereference", False)
-    if not path.exists():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-    result = path.stat() if dereference else path.lstat()
-    add_success_response(
-        response,
-        200,
-        {
-            "mode": result.st_mode,
-            "uid": result.st_uid,
-            "gid": result.st_gid,
-            "size": result.st_size,
-            "atime": result.st_atime,
-            "mtime": result.st_mtime,
-            "ctime": result.st_ctime,
-            "nlink": result.st_nlink,
-            "ino": result.st_ino,
-            "dev": result.st_dev,
-        },
-    )
-
-
-def utilities_ls(params: dict[str, Any], response: Response) -> None:
-    path = Path(params["targetPath"])
-    if not path.is_dir():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-    add_success_response(response, 200, [{"name": f.name} for f in path.iterdir()])
-
-
-def utilities_chmod(data: dict[str, Any], response: Response) -> None:
-    path = Path(data["targetPath"])
-    if not path.exists():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-    path.chmod(int(data["mode"], 8))
-    add_success_response(response, 200)
-
-
-def utilities_mkdir(data: dict[str, Any], response: Response) -> None:
-    path = Path(data["targetPath"])
-    if path.exists():
-        response.status_code = 400
-        response.headers["X-Exists"] = ""
-        return
-    path.mkdir(parents=data.get("p", False))
-    add_success_response(response, 201)
-
-
-def utilities_rm(data: dict[str, Any], response: Response) -> None:
-    path = Path(data["targetPath"])
-    if not path.exists():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-    path.unlink()
-    add_success_response(response, 204)
-
-
-def utilities_copy(data: dict[str, Any], response: Response) -> None:
-    source = Path(data["sourcePath"])
-    target = Path(data["targetPath"])
-    if not source.exists():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-    if target.exists():
-        response.status_code = 400
-        response.headers["X-Exists"] = ""
-        return
-    if source.is_dir():
-        shutil.copytree(source, target)
-    else:
-        shutil.copy2(source, target)
-    add_success_response(response, 201)
-
-
-def utilities_upload(
-    data: dict[str, Any], files: dict[str, tuple[str, BinaryIO]], response: Response
-) -> None:
-    # TODO files["file"] can be a tuple (name, stream) or just a stream with a name
-    fname, fbuffer = files["file"]
-    path = Path(data["targetPath"]) / fname
-    if not path.parent.exists():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-
-    max_size_bytes = 5 * 1024 * 1024
-    fbytes = fbuffer.read()
-    if len(fbytes) > max_size_bytes:
-        add_json_response(
-            response,
-            413,
-            {
-                "description": f"Failed to upload file. The file is over {max_size_bytes} bytes"
-            },
-        )
-        return
-
-    path.write_bytes(fbytes)
-    add_success_response(response, 201)
-
-
-def utilities_download(params: dict[str, Any], response: Response) -> None:
-    path = Path(params["sourcePath"])
-    if not path.is_file():
-        response.status_code = 400
-        response.headers["X-Invalid-Path"] = ""
-        return
-    response.status_code = 200
-    response.raw = io.BytesIO(path.read_bytes())

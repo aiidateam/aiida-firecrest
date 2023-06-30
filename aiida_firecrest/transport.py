@@ -6,8 +6,10 @@ import os
 from pathlib import Path
 import platform
 import posixpath
+import shutil
 import time
 from typing import Any, ClassVar, TypedDict
+from urllib import request
 
 from aiida.cmdline.params.options.overridable import OverridableOption
 from aiida.transports import Transport
@@ -325,10 +327,39 @@ class FirecrestTransport(Transport):
         )
         if not remote.is_file():
             raise FileNotFoundError(f"Source file does not exist: {remote}")
-        # TODO handle files exceeding small_file_size_mb
+        remote_size = remote.lstat().st_size
+
         with convert_header_exceptions({"machine": self._machine, "path": remote}):
-            self._client.simple_download(self._machine, str(remote), localpath)
-        # TODO use client.checksum to confirm?
+            if remote_size < self._small_file_size_bytes:
+                self._client.simple_download(self._machine, str(remote), localpath)
+            else:
+                # TODO the following is a very basic implementation of downloading a large file
+                # ideally though, if downloading multiple large files (i.e. in gettree),
+                # we would want to probably use asyncio,
+                # to concurrently initiate internal file transfers to the object store (a.k.a. "staging area")
+                # and downloading from the object store to the local machine
+
+                # this initiates the internal transfer of the file to the "staging area"
+                down_obj = self._client.external_download(self._machine, str(remote))
+
+                # this waits for the file to be moved to the staging area
+                # TODO handle the transfer stalling (timeout?) and optimise the polling interval
+                # (and allow configurability?)
+                while down_obj.in_progress:
+                    time.sleep(0.1)
+
+                # this downloads the file from the "staging area"
+                url = down_obj.object_storage_data
+                if (
+                    os.environ.get("FIRECREST_LOCAL_TESTING")
+                    and platform.system() == "Darwin"
+                ):
+                    # TODO when using the demo server on a Mac, the wrong IP is provided
+                    url = url.replace("192.168.220.19", "localhost")
+                with request.urlopen(url) as response, local.open("wb") as handle:
+                    shutil.copyfileobj(response, handle)
+
+        # TODO use cwd.checksum to confirm download is not corrupted?
 
     def gettree(
         self, remotepath: str | FcPath, localpath: str | Path, *args: Any, **kwargs: Any
@@ -372,7 +403,18 @@ class FirecrestTransport(Transport):
         remote = self._cwd.joinpath(remotepath).enable_cache()
         # note this allows overwriting of existing files
         with convert_header_exceptions({"machine": self._machine, "path": remote}):
-            if local_size >= self._small_file_size_bytes:
+            if local_size < self._small_file_size_bytes:
+                self._client.simple_upload(
+                    self._machine, localpath, str(remote.parent), remote.name
+                )
+            else:
+                # TODO the following is a very basic implementation of uploading a large file
+                # ideally though, if uploading multiple large files (i.e. in puttree),
+                # we would want to probably use asyncio,
+                # to concurrently upload to the object store (a.k.a. "staging area"),
+                # then wait for all files to finish being transferred to the target location
+
+                # this simply retrieves a location to upload on the "staging area"
                 up_obj = self._client.external_upload(
                     self._machine, localpath, str(remote)
                 )
@@ -385,25 +427,17 @@ class FirecrestTransport(Transport):
                         "command"
                     ].replace("192.168.220.19", "localhost")
 
-                # TODO the following is a very basic implementation of uploading a large file
-                # ideally though, if uploading multiple large files (i.e. in puttree),
-                # we would want to probably use asyncio, to concurrently upload,
-                # then wait for all to finish
-
                 # this uploads the file to the "staging area"
                 # TODO this calls curl in a subcommand, but you could also use the python requests library
                 # see: https://github.com/chrisjsewell/fireflow/blob/d45d41a0aced6502b7946c5557712a3c3cb1bebb/src/fireflow/process.py#L177
                 up_obj.finish_upload()
                 # this waits for the file in the staging area to be moved to the final location
+                # TODO handle the transfer stalling (timeout?) and optimise the polling interval
+                # (and allow configurability?)
                 while up_obj.in_progress:
-                    # TODO add a timeout and optimise the sleep time (and allow configurability?)
                     time.sleep(0.1)
-            else:
-                self._client.simple_upload(
-                    self._machine, localpath, str(remote.parent), remote.name
-                )
 
-        # TODO use client.checksum to confirm upload is not corrupted?
+        # TODO use cwd.checksum to confirm upload is not corrupted?
 
     def puttree(self, localpath: str | Path, remotepath: str, *args, **kwargs):
         localpath = Path(localpath)
