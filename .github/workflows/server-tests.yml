@@ -39,10 +39,16 @@ jobs:
         ref: ${{ matrix.firecrest-version }}
         path: .demo-server
 
+    - name: Ensure permissions of SSH Keys
+      run: |
+        chmod 400 .demo-server/deploy/test-build/environment/keys/ca-key
+        chmod 400 .demo-server/deploy/test-build/environment/keys/user-key
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip'
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
