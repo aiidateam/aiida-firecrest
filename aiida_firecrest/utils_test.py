@@ -6,6 +6,7 @@ import io
 from json import dumps as json_dumps
 from pathlib import Path
 import shutil
+import subprocess
 from typing import Any, BinaryIO
 from urllib.parse import urlparse
 
@@ -27,7 +28,11 @@ class FirecrestConfig:
 
 
 class FirecrestMockServer:
-    """A mock server to imitate Firecrest (v1.12.0)."""
+    """A mock server to imitate Firecrest (v1.12.0).
+
+    This minimally mimics accessing the filesystem and submitting jobs,
+    enough to make tests pass, without having to run a real Firecrest server.
+    """
 
     def __init__(
         self, tmpdir: Path, url: str = "https://test.com", machine: str = "test"
@@ -43,10 +48,11 @@ class FirecrestMockServer:
         self._token_url_parsed = urlparse(self._token_url)
         self._username = "test_user"
 
+        self._slurm_job_id_counter = 0
         self._slurm_jobs: dict[str, dict[str, Any]] = {}
 
         self._task_id_counter = 0
-        self._tasks: dict[str, SchedulerJobsTask | ScheduledJobTask] = {}
+        self._tasks: dict[str, ActiveSchedulerJobsTask | ScheduledJobTask] = {}
 
     @property
     def scratch(self) -> Path:
@@ -62,10 +68,6 @@ class FirecrestMockServer:
             machine=self._machine,
             scratch_path=str(self._scratch.absolute()),
         )
-
-    def new_task_id(self) -> str:
-        self._task_id_counter += 1
-        return f"{self._task_id_counter}"
 
     def mock_request(
         self,
@@ -125,47 +127,24 @@ class FirecrestMockServer:
         elif endpoint == "/utilities/download":
             utilities_download(params or {}, response)
         elif endpoint == "/compute/jobs/path":
-            assert data is not None
-            script_path = Path(data["targetPath"])
-            if not script_path.is_file():
-                return add_json_response(
-                    response,
-                    400,
-                    {"description": "Failed to submit job"},
-                    {"X-Invalid-Path": f"{script_path} is an invalid path."},
-                )
-            # TODO implement running a script and saving the output
-            job_id = "test_job_id"
-            task_id = self.new_task_id()
-            self._tasks[task_id] = ScheduledJobTask(task_id, job_id)
-            add_json_response(
-                response,
-                201,
-                {"success": "Task created", "task_url": "notset", "task_id": task_id},
-            )
+            self.compute_jobs_path(data or {}, response)
         elif endpoint == "/compute/jobs":
-            assert params is not None
-            # TODO pageSize pageNumber
-            jobs: None | list[str] = (
-                params["jobs"].split(",") if "jobs" in params else None
-            )
-            task_id = self.new_task_id()
-            self._tasks[task_id] = SchedulerJobsTask(task_id=task_id, jobs=jobs)
-            add_json_response(
-                response,
-                200,
-                {
-                    "success": "Task created",
-                    "task_id": task_id,
-                    "task_url": "notset",
-                },
-            )
+            self.compute_jobs(params or {}, response)
         elif endpoint.startswith("/tasks/"):
             return self.handle_task(endpoint[7:], response)
         else:
             raise requests.exceptions.InvalidURL(f"Unknown endpoint: {endpoint}")
 
         return response
+
+    def new_task_id(self) -> str:
+        self._task_id_counter += 1
+        return f"{self._task_id_counter}"
+
+    def new_slurm_job_id(self) -> str:
+        """Generate a new SLURM job ID."""
+        self._slurm_job_id_counter += 1
+        return f"{self._slurm_job_id_counter}"
 
     def handle_task(self, task_id: str, response: Response) -> Response:
         if task_id not in self._tasks:
@@ -175,12 +154,8 @@ class FirecrestMockServer:
 
         task = self._tasks.pop(task_id)
 
-        if isinstance(task, SchedulerJobsTask):
-            job_data: dict[str, Any] = {}
-            if task.jobs is None:
-                # TODO get all jobs
-                pass
-            else:
+        if isinstance(task, ActiveSchedulerJobsTask):
+            if task.jobs is not None:
                 for job_id in task.jobs or []:
                     if job_id not in self._slurm_jobs:
                         return add_json_response(
@@ -192,7 +167,10 @@ class FirecrestMockServer:
                             },
                         )
 
-                    # TODO get job data for job_id
+            # Note because we always run jobs straight away (see self.compute_jobs_path),
+            # then we can assume that there are never any active jobs.
+            # TODO add some basic way to simulate active jobs
+            job_data: dict[str, Any] = {}
 
             return add_json_response(
                 response,
@@ -215,14 +193,141 @@ class FirecrestMockServer:
             )
 
         if isinstance(task, ScheduledJobTask):
-            # TODO
-            pass
+            return add_json_response(
+                response,
+                200,
+                {
+                    "task": {
+                        "data": {
+                            "job_data_err": "",
+                            "job_data_out": "",
+                            "job_file": str(task.script_path),
+                            "job_file_err": str(str(task.stderr_path)),
+                            "job_file_out": str(str(task.stdout_path)),
+                            "job_info_extra": "Job info returned successfully",
+                            "jobid": task.job_id,
+                            "result": "Job submitted",
+                        },
+                        "description": "Finished successfully",
+                        "service": "compute",
+                        "status": "200",
+                        "task_id": task.task_id,
+                        "user": self._username,
+                        # "task_url": "...",
+                        # "hash_id": "ed2834ba97ce683b0699848fadfa35b9",
+                        # "created_at": "2023-06-29T16:30:24",
+                        # "last_modify": "2023-06-29T16:30:25",
+                        # "updated_at": "2023-06-29T16:30:25",
+                    }
+                },
+            )
 
         raise NotImplementedError(f"Unknown task type: {type(task)}")
 
+    def compute_jobs(self, params: dict[str, Any], response: Response) -> None:
+        # TODO pageSize pageNumber
+        jobs: None | list[str] = params["jobs"].split(",") if "jobs" in params else None
+        task_id = self.new_task_id()
+        self._tasks[task_id] = ActiveSchedulerJobsTask(task_id=task_id, jobs=jobs)
+        add_json_response(
+            response,
+            200,
+            {
+                "success": "Task created",
+                "task_id": task_id,
+                "task_url": "notset",
+            },
+        )
+
+    def compute_jobs_path(self, data: dict[str, Any], response: Response) -> Response:
+        script_path = Path(data["targetPath"])
+        if not script_path.is_file():
+            return add_json_response(
+                response,
+                400,
+                {"description": "Failed to submit job", "data": "File does not exist"},
+                {"X-Invalid-Path": f"{script_path} is an invalid path."},
+            )
+
+        job_id = self.new_slurm_job_id()
+
+        # read the file
+        script_content = script_path.read_text("utf8")
+
+        # TODO this could be more rigorous
+
+        # check that the first line is a shebang
+        if not script_content.startswith("#!/bin/bash"):
+            return add_json_response(
+                response,
+                400,
+                {
+                    "description": "Finished with errors",
+                    "data": "First line must be a shebang `#!/bin/bash`",
+                },
+            )
+
+        # get all sbatch options (see https://slurm.schedmd.com/sbatch.html)
+        sbatch_options: dict[str, Any] = {}
+
+        for line in script_content.splitlines():
+            if not line.startswith("#SBATCH"):
+                continue
+            arg = line[7:].strip().split("=", 1)
+            if len(arg) == 1:
+                assert arg[0].startswith("--"), f"Invalid sbatch option: {arg[0]}"
+                sbatch_options[arg[0][2:]] = True
+            elif len(arg) == 2:
+                assert arg[0].startswith("--"), f"Invalid sbatch option: {arg[0]}"
+                sbatch_options[arg[0][2:]] = arg[1].strip()
+
+        # set stdout and stderror file
+        out_file = error_file = "slurm-%j.out"
+        if "output" in sbatch_options:
+            out_file = sbatch_options["output"]
+        if "error" in sbatch_options:
+            error_file = sbatch_options["error"]
+        out_file = out_file.replace("%j", job_id)
+        error_file = error_file.replace("%j", job_id)
+
+        # we now just run the job straight away and blocking, no scheduling
+        # run the script in a subprocess, in the script's directory
+        # pipe stdout and stderr to the slurm output file
+        script_path.chmod(0o755)  # make sure the script is executable
+        if out_file == error_file:
+            with open(script_path.parent / out_file, "w") as out:
+                subprocess.run(
+                    [str(script_path)],
+                    cwd=script_path.parent,
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                )
+        else:
+            with open(script_path.parent / out_file, "w") as out, open(
+                script_path.parent / error_file, "w"
+            ) as err:
+                subprocess.run(
+                    [str(script_path)], cwd=script_path.parent, stdout=out, stderr=err
+                )
+
+        task_id = self.new_task_id()
+        self._tasks[task_id] = ScheduledJobTask(
+            task_id=task_id,
+            job_id=job_id,
+            script_path=script_path,
+            stdout_path=script_path.parent / out_file,
+            stderr_path=script_path.parent / error_file,
+        )
+        self._slurm_jobs[job_id] = {}
+        return add_json_response(
+            response,
+            201,
+            {"success": "Task created", "task_url": "notset", "task_id": task_id},
+        )
+
 
 @dataclass
-class SchedulerJobsTask:
+class ActiveSchedulerJobsTask:
     task_id: str
     jobs: list[str] | None
 
@@ -231,6 +336,35 @@ class SchedulerJobsTask:
 class ScheduledJobTask:
     task_id: str
     job_id: str
+    script_path: Path
+    stdout_path: Path
+    stderr_path: Path
+
+
+def add_json_response(
+    response: Response,
+    status_code: int,
+    json_data: dict[str, Any],
+    headers: dict[str, str] | None = None,
+) -> Response:
+    response.status_code = status_code
+    response.raw = io.BytesIO(json_dumps(json_data).encode(response.encoding or "utf8"))
+    if headers:
+        response.headers.update(headers)
+    return response
+
+
+def add_success_response(
+    response: Response, status_code: int, output: Any = ""
+) -> Response:
+    return add_json_response(
+        response,
+        status_code,
+        {
+            "description": "success",
+            "output": output,
+        },
+    )
 
 
 def utilities_file(params: dict[str, Any], response: Response) -> None:
@@ -362,29 +496,3 @@ def utilities_download(params: dict[str, Any], response: Response) -> None:
         return
     response.status_code = 200
     response.raw = io.BytesIO(path.read_bytes())
-
-
-def add_json_response(
-    response: Response,
-    status_code: int,
-    json_data: dict[str, Any],
-    headers: dict[str, str] | None = None,
-) -> Response:
-    response.status_code = status_code
-    response.raw = io.BytesIO(json_dumps(json_data).encode(response.encoding or "utf8"))
-    if headers:
-        response.headers.update(headers)
-    return response
-
-
-def add_success_response(
-    response: Response, status_code: int, output: Any = ""
-) -> Response:
-    return add_json_response(
-        response,
-        status_code,
-        {
-            "description": "success",
-            "output": output,
-        },
-    )

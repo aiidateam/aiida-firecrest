@@ -180,7 +180,8 @@ class FirecrestScheduler(Scheduler):
                     raise ValueError
             except ValueError:
                 raise ValueError(
-                    f"max_memory_kb must be a positive integer (in kB)! It is instead `{job_tmpl.max_memory_kb}`"
+                    "max_memory_kb must be a positive integer (in kB)! "
+                    f"It is instead `{job_tmpl.max_memory_kb}`"
                 )
             # --mem: Specify the real memory required per node in MegaBytes.
             # --mem and  --mem-per-cpu  are  mutually exclusive.

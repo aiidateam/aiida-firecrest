@@ -41,7 +41,7 @@ def test_submit_job(transport: FirecrestTransport):
     # create a job script in a folder
     transport.mkdir("test_submission")
     transport.chdir("test_submission")
-    transport.write_binary("job.sh", b"#!/bin/sh\n\necho 'hello world'")
+    transport.write_binary("job.sh", b"#!/bin/bash\n\necho 'hello world'")
 
     job_id = scheduler.submit_job(transport.getcwd(), "job.sh")
     assert isinstance(job_id, str)
