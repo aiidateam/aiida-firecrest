@@ -44,8 +44,8 @@ jobs:
         chmod 400 .demo-server/deploy/test-build/environment/keys/ca-key
         chmod 400 .demo-server/deploy/test-build/environment/keys/user-key
 
-    - name: Build the docker images
-      run: docker-compose build
+    - name: Build and start the FirecREST server
+      run: docker-compose up --build --detach
       working-directory: .demo-server/deploy/demo
 
     - name: Set up Python ${{ matrix.python-version }}
