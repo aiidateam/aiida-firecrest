@@ -46,7 +46,23 @@ jobs:
 
     - name: Build the FirecREST images
       run: |
-        docker-compose build certificator
+        docker-compose build f7t-base
+        # docker-compose build certificator
+        docker-compose build compute
+        docker-compose build status
+        docker-compose build storage
+        docker-compose build tasks
+        docker-compose build utilities
+        docker-compose build reservations
+        docker-compose build client
+        docker-compose build cluster
+        docker-compose build keycloak
+        docker-compose build kong
+        docker-compose build minio
+        docker-compose build taskpersistence
+        docker-compose build opa
+        docker-compose build openapi
+        docker-compose build jaeger
       working-directory: .demo-server/deploy/demo
 
     - name: check existing images
