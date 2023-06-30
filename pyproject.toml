@@ -45,7 +45,7 @@ firecrest = "aiida_firecrest.transport:FirecrestTransport"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "pytest-timeout", "pgtest"]
-docs = ["furo==2021.11.23"]
+docs = ["furo==2023.5.20"]
 
 [tool.flit.sdist]
 exclude = [
