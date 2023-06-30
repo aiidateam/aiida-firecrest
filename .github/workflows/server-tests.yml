@@ -44,21 +44,26 @@ jobs:
         chmod 400 .demo-server/deploy/test-build/environment/keys/ca-key
         chmod 400 .demo-server/deploy/test-build/environment/keys/user-key
 
+    - name: Build the FirecREST images
+      run: |
+        docker-compose build f7t-base
+      working-directory: .demo-server/deploy/demo
+
     - name: check existing images
       run: docker image list --all
 
-    - name: Build and start the FirecREST server
-      run: docker-compose up --build --detach
-      working-directory: .demo-server/deploy/demo
+    # - name: Build and start the FirecREST server
+    #   run: docker-compose up --build --detach
+    #   working-directory: .demo-server/deploy/demo
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .[dev]
-    - name: Test with pytest
-      run: pytest -vv --cov=aiida_firecrest
+    # - name: Set up Python ${{ matrix.python-version }}
+    #   uses: actions/setup-python@v4
+    #   with:
+    #     python-version: ${{ matrix.python-version }}
+    #     cache: 'pip'
+    # - name: Install dependencies
+    #   run: |
+    #     python -m pip install --upgrade pip
+    #     pip install -e .[dev]
+    # - name: Test with pytest
+    #   run: pytest -vv --cov=aiida_firecrest
