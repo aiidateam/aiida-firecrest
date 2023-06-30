@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import string
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from aiida.engine.processes.exit_code import ExitCode
 from aiida.schedulers import Scheduler, SchedulerError
@@ -22,7 +22,7 @@ class FirecrestScheduler(Scheduler):
 
     transport: FirecrestTransport
     _job_resource_class = SlurmJobResource
-    _features = {
+    _features: ClassVar[dict[str, Any]] = {
         "can_query_by_user": False,
     }
     _logger = Scheduler._logger.getChild("firecrest")
@@ -158,7 +158,7 @@ class FirecrestScheduler(Scheduler):
                     "max_wallclock_seconds must be "
                     "a positive integer (in seconds)! It is instead '{}'"
                     "".format(job_tmpl.max_wallclock_seconds)
-                )
+                ) from None
             days = tot_secs // 86400
             tot_hours = tot_secs % 86400
             hours = tot_hours // 3600
@@ -182,7 +182,7 @@ class FirecrestScheduler(Scheduler):
                 raise ValueError(
                     "max_memory_kb must be a positive integer (in kB)! "
                     f"It is instead `{job_tmpl.max_memory_kb}`"
-                )
+                ) from None
             # --mem: Specify the real memory required per node in MegaBytes.
             # --mem and  --mem-per-cpu  are  mutually exclusive.
             lines.append(f"#SBATCH --mem={physical_memory_kb // 1024}")
@@ -330,15 +330,15 @@ class FirecrestScheduler(Scheduler):
             if (
                 this_job.allocated_machines is not None
                 and this_job.num_machines is not None
+                and len(this_job.allocated_machines) != this_job.num_machines
             ):
-                if len(this_job.allocated_machines) != this_job.num_machines:
-                    self.logger.error(
-                        "The length of the list of allocated "
-                        "nodes ({}) is different from the "
-                        "expected number of nodes ({})!".format(
-                            len(this_job.allocated_machines), this_job.num_machines
-                        )
+                self.logger.error(
+                    "The length of the list of allocated "
+                    "nodes ({}) is different from the "
+                    "expected number of nodes ({})!".format(
+                        len(this_job.allocated_machines), this_job.num_machines
                     )
+                )
 
             # I append to the list of jobs to return
             job_list.append(this_job)

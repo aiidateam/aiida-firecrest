@@ -1,4 +1,4 @@
-"""Tests isolating only the Scheduler.""" ""
+"""Tests isolating only the Scheduler."""
 from aiida.schedulers import SchedulerError
 import pytest
 

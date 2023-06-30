@@ -1,4 +1,4 @@
-"""Tests isolating only the Transport.""" ""
+"""Tests isolating only the Transport."""
 from pathlib import Path
 
 import pytest

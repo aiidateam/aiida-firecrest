@@ -223,7 +223,7 @@ class FcPath(os.PathLike):
 
     @property
     def parent(self: SelfTv) -> SelfTv:
-        """The path’s parent directory."""
+        """The path's parent directory."""
         return self._new_path(self._path.parent)
 
     def is_absolute(self) -> bool:
@@ -543,7 +543,7 @@ class FcPath(os.PathLike):
             st_mode = self._lstat_mode()
         except FileNotFoundError:
             if not missing_ok:
-                raise FileNotFoundError(self)
+                raise FileNotFoundError(self) from None
             return
         if stat.S_ISDIR(st_mode):
             raise IsADirectoryError(self)
@@ -559,7 +559,7 @@ class FcPath(os.PathLike):
         try:
             st_mode = self._lstat_mode()
         except FileNotFoundError:
-            raise FileNotFoundError(self)
+            raise FileNotFoundError(self) from None
         if not stat.S_ISDIR(st_mode):
             raise NotADirectoryError(self)
         with convert_header_exceptions({"machine": self._machine, "path": self}):

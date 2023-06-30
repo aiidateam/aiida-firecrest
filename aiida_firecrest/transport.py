@@ -5,7 +5,7 @@ import fnmatch
 import os
 from pathlib import Path
 import posixpath
-from typing import Any, TypedDict
+from typing import Any, ClassVar, TypedDict
 
 from aiida.cmdline.params.options.overridable import OverridableOption
 from aiida.transports import Transport
@@ -20,11 +20,11 @@ from .remote_path import FcPath, convert_header_exceptions
 class ValidAuthOption(TypedDict, total=False):  # type: ignore
     option: OverridableOption | None  # existing option
     switch: bool  # whether the option is a boolean flag
-    type: type[Any] | ParamType  # noqa: A003
+    type: type[Any] | ParamType
     default: Any
     non_interactive_default: bool  # whether option should provide a default in non-interactive mode
     prompt: str  # for interactive CLI
-    help: str  # noqa: A003
+    help: str
 
 
 class FirecrestTransport(Transport):
@@ -39,10 +39,10 @@ class FirecrestTransport(Transport):
     #   across all transport instances
     # TODO upstream issue
     # TODO also open an issue that the `verdi computer test won't work with a REST-API`
-    _common_auth_options: list[Any] = []
+    _common_auth_options: ClassVar[list[Any]] = []
     _DEFAULT_SAFE_OPEN_INTERVAL = 0.0
 
-    _valid_auth_options: list[tuple[str, dict]] = [
+    _valid_auth_options: ClassVar[list[tuple[str, dict]]] = [
         (
             "url",
             {
