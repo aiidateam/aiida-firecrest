@@ -1,6 +1,6 @@
 # aiida-firecrest [IN-DEVELOPMENT]
 
-AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/) (currently based on [v1.12.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.12.0)),
+AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/) (currently based on [v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0)),
 via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
 
 ## Usage
