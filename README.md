@@ -131,10 +131,10 @@ By default, the tests are run using a mock FirecREST server, in a temporary fold
 You can also provide connections details to a real FirecREST server:
 
 ```bash
-tox -- --firecrest-config=".firecrest-config.json"
+tox -- --firecrest-config=".firecrest-demo-config.json"
 ```
 
-The format of the `.firecrest-config.json` file is:
+The format of the `.firecrest-demo-config.json` file is:
 
 ```json
 {
@@ -150,8 +150,8 @@ The format of the `.firecrest-config.json` file is:
 In this mode, if you want to inspect the generated files, after a failure, you can use:
 
 ```bash
-tox -- --firecrest-config=".firecrest-config.json" --firecrest-no-clean
+tox -- --firecrest-config=".firecrest-demo-config.json" --firecrest-no-clean
 ```
 
 See [firecrest_demo.py](firecrest_demo.py) for how to start up a demo server.
-(note the issue with OSX abd turning off the AirPlay port)
+(note the issue with OSX and turning off the AirPlay port)
