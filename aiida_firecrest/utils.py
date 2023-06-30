@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from typing import Any, Callable
 
 from aiida.schedulers import SchedulerError
-from firecrest.BasicClient import logger as FcLogger
+from firecrest.BasicClient import logger as FcLogger  # noqa: N812
 from firecrest.FirecrestException import HeaderException
 
 
@@ -47,7 +47,7 @@ def convert_header_exceptions(
     """
     converters: dict[str, Callable[[dict[str, Any]], Exception]] = {
         "X-Timeout": ApiTimeoutError,
-        "X-Machine-Does-Not-Exist": MachineDoesNotExist,
+        "X-Machine-Does-Not-Exist": MachineDoesNotExistError,
         "X-Machine-Not-Available": PermissionError,
         "X-Permission-Denied": PermissionError,
         "X-Not-Found": FileNotFoundError,
@@ -55,7 +55,7 @@ def convert_header_exceptions(
         "X-Exists": FileExistsError,
         "X-Invalid-Path": FileNotFoundError,
         "X-A-Directory": IsADirectoryError,
-        "X-Size-Limit": FileSizeExceeded,
+        "X-Size-Limit": FileSizeExceededError,
         "X-Sbatch-Error": SchedulerError,
     }
     if updates is not None:
@@ -78,7 +78,7 @@ class ApiTimeoutError(TimeoutError):
         super().__init__("API call timed out")
 
 
-class MachineDoesNotExist(ConnectionError):
+class MachineDoesNotExistError(ConnectionError):
     """The machine does not exist."""
 
     def __init__(self, data: dict[str, Any]) -> None:
@@ -88,7 +88,7 @@ class MachineDoesNotExist(ConnectionError):
         super().__init__(msg)
 
 
-class FileSizeExceeded(OSError):
+class FileSizeExceededError(OSError):
     """Maximum file size exceeded."""
 
     def __init__(self, data: dict[str, Any]) -> None:
