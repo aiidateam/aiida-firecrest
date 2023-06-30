@@ -47,6 +47,7 @@ jobs:
     - name: Build the FirecREST images
       run: |
         docker-compose build f7t-base
+        docker-compose build compute
       working-directory: .demo-server/deploy/demo
 
     - name: check existing images
