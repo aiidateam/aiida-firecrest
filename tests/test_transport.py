@@ -1,5 +1,6 @@
 """Tests isolating only the Transport."""
 from pathlib import Path
+import platform
 
 import pytest
 
@@ -36,29 +37,30 @@ def test_mkdir(firecrest_server: FirecrestConfig, transport: FirecrestTransport)
     assert transport.isdir(firecrest_server.scratch_path + "/test")
 
 
-def test_putfile(
+def test_large_file_transfers(
     firecrest_server: FirecrestConfig, transport: FirecrestTransport, tmp_path: Path
 ):
-    to_path = firecrest_server.scratch_path + "/file.txt"
-    assert not transport.isfile(to_path)
-    file_path = tmp_path.joinpath("file.txt")
-    file_path.write_text("test")
-    transport.putfile(str(file_path), to_path)
-    assert transport.isfile(to_path)
-    assert transport.read_binary(to_path) == b"test"
-
-
-def test_putfile_large(
-    firecrest_server: FirecrestConfig, transport: FirecrestTransport, tmp_path: Path
-):
+    """Large file transfers (> 5MB by default) have to be downloaded/uploaded via a different pathway."""
     content = "a" * (transport._small_file_size_bytes + 1)
-    to_path = firecrest_server.scratch_path + "/file.txt"
-    assert not transport.isfile(to_path)
+
+    # upload
+    remote_path = firecrest_server.scratch_path + "/file.txt"
+    assert not transport.isfile(remote_path)
     file_path = tmp_path.joinpath("file.txt")
     file_path.write_text(content)
-    transport.putfile(str(file_path), to_path)
-    assert transport.isfile(to_path)
-    # assert transport.read_binary(to_path) == content.encode("utf8")
+    transport.putfile(str(file_path), remote_path)
+    assert transport.isfile(remote_path)
+
+    # download
+    if transport._url.startswith("http://localhost") and platform.system() == "Darwin":
+        pytest.skip("Skipping large file download test on macOS with localhost server.")
+        # TODO this is a known issue whereby a 403 is returned when trying to download the supplied file url
+        # due to a signature mismatch
+    new_path = tmp_path.joinpath("file2.txt")
+    assert not new_path.is_file()
+    transport.getfile(remote_path, new_path)
+    assert new_path.is_file()
+    assert new_path.read_text() == content
 
 
 def test_listdir(firecrest_server: FirecrestConfig, transport: FirecrestTransport):

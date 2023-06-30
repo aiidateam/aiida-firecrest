@@ -510,18 +510,27 @@ class FcPath(os.PathLike):
             os.remove(source_path)
 
     def read_bytes(self) -> bytes:
-        """Read the contents of the file as bytes."""
+        """Read the contents of the file as bytes.
+
+        NOTE: This is only intended for small files.
+        """
         io = BytesIO()
         with convert_header_exceptions({"machine": self._machine, "path": self}):
             self._client.simple_download(self._machine, self.path, io)
         return io.getvalue()
 
     def read_text(self, encoding: str = "utf-8", errors: str = "strict") -> str:
-        """Read the contents of the file as text."""
+        """Read the contents of the file as text.
+
+        NOTE: This is only intended for small files.
+        """
         return self.read_bytes().decode(encoding, errors)
 
     def write_bytes(self, data: bytes) -> None:
-        """Write bytes to the file."""
+        """Write bytes to the file.
+
+        NOTE: This is only intended for small files.
+        """
         buffer = BytesIO(data)
         with convert_header_exceptions({"machine": self._machine, "path": self}):
             self._client.simple_upload(
@@ -531,7 +540,10 @@ class FcPath(os.PathLike):
     def write_text(
         self, data: str, encoding: str = "utf-8", errors: str = "strict"
     ) -> None:
-        """Write text to the file."""
+        """Write text to the file.
+
+        NOTE: This is only intended for small files.
+        """
         self.write_bytes(data.encode(encoding, errors))
 
     def unlink(self, missing_ok: bool = False) -> None:
