@@ -46,7 +46,7 @@ jobs:
 
     - name: Build the FirecREST images
       run: |
-        docker-compose build --no-cache
+        docker-compose build certificator
       working-directory: .demo-server/deploy/demo
 
     - name: check existing images
