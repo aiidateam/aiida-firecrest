@@ -42,7 +42,7 @@ jobs:
     - name: Build the FirecREST images
       run: |
         docker-compose build f7t-base
-        docker-compose build certificator
+        # docker-compose build certificator
         docker-compose build compute
         docker-compose build status
         docker-compose build storage
