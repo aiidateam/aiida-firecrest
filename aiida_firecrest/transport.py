@@ -4,7 +4,9 @@ from __future__ import annotations
 import fnmatch
 import os
 from pathlib import Path
+import platform
 import posixpath
+import time
 from typing import Any, ClassVar, TypedDict
 
 from aiida.cmdline.params.options.overridable import OverridableOption
@@ -104,7 +106,7 @@ class FirecrestTransport(Transport):
             "small_file_size_mb",
             {
                 "type": float,
-                "default": 5.0,
+                "default": 5.0,  # limit set on the server is usually this
                 "non_interactive_default": True,
                 "prompt": "Maximum file size for direct transfer (MB)",
                 "help": "Below this size, file bytes will be sent in a single API call.",
@@ -145,6 +147,7 @@ class FirecrestTransport(Transport):
         self._url = url
         self._token_uri = token_uri
         self._client_id = client_id
+        self._small_file_size_bytes = int(small_file_size_mb * 1024 * 1024)
 
         secret = (
             client_secret.read_text()
@@ -158,7 +161,6 @@ class FirecrestTransport(Transport):
         )
 
         self._cwd: FcPath = FcPath(self._client, self._machine, "/")
-        self._small_file_size_mb = small_file_size_mb
 
     # TODO if this is missing is causes plugin info to fail on verdi
     is_process_function = False
@@ -364,14 +366,44 @@ class FirecrestTransport(Transport):
     def putfile(self, localpath: str, remotepath: str, *args, **kwargs):
         if not Path(localpath).is_absolute():
             raise ValueError("The localpath must be an absolute path")
+        if not Path(localpath).is_file():
+            raise ValueError(f"Input localpath is not a file: {localpath}")
+        local_size = Path(localpath).stat().st_size
         remote = self._cwd.joinpath(remotepath).enable_cache()
-        # note this allows overwriting
-        # TODO handle files exceeding small_file_size_mb
+        # note this allows overwriting of existing files
         with convert_header_exceptions({"machine": self._machine, "path": remote}):
-            self._client.simple_upload(
-                self._machine, localpath, str(remote.parent), remote.name
-            )
-        # TODO use client.checksum to confirm?
+            if local_size >= self._small_file_size_bytes:
+                up_obj = self._client.external_upload(
+                    self._machine, localpath, str(remote)
+                )
+                if (
+                    os.environ.get("FIRECREST_LOCAL_TESTING")
+                    and platform.system() == "Darwin"
+                ):
+                    # TODO when using the demo server on a Mac, the wrong IP is provided
+                    up_obj.object_storage_data["command"] = up_obj.object_storage_data[
+                        "command"
+                    ].replace("192.168.220.19", "localhost")
+
+                # TODO the following is a very basic implementation of uploading a large file
+                # ideally though, if uploading multiple large files (i.e. in puttree),
+                # we would want to probably use asyncio, to concurrently upload,
+                # then wait for all to finish
+
+                # this uploads the file to the "staging area"
+                # TODO this calls curl in a subcommand, but you could also use the python requests library
+                # see: https://github.com/chrisjsewell/fireflow/blob/d45d41a0aced6502b7946c5557712a3c3cb1bebb/src/fireflow/process.py#L177
+                up_obj.finish_upload()
+                # this waits for the file in the staging area to be moved to the final location
+                while up_obj.in_progress:
+                    # TODO add a timeout and optimise the sleep time (and allow configurability?)
+                    time.sleep(0.1)
+            else:
+                self._client.simple_upload(
+                    self._machine, localpath, str(remote.parent), remote.name
+                )
+
+        # TODO use client.checksum to confirm upload is not corrupted?
 
     def puttree(self, localpath: str | Path, remotepath: str, *args, **kwargs):
         localpath = Path(localpath)

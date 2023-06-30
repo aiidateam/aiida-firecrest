@@ -48,6 +48,19 @@ def test_putfile(
     assert transport.read_binary(to_path) == b"test"
 
 
+def test_putfile_large(
+    firecrest_server: FirecrestConfig, transport: FirecrestTransport, tmp_path: Path
+):
+    content = "a" * (transport._small_file_size_bytes + 1)
+    to_path = firecrest_server.scratch_path + "/file.txt"
+    assert not transport.isfile(to_path)
+    file_path = tmp_path.joinpath("file.txt")
+    file_path.write_text(content)
+    transport.putfile(str(file_path), to_path)
+    assert transport.isfile(to_path)
+    # assert transport.read_binary(to_path) == content.encode("utf8")
+
+
 def test_listdir(firecrest_server: FirecrestConfig, transport: FirecrestTransport):
     assert transport.listdir(firecrest_server.scratch_path) == []
     # TODO make file/folder then re-test

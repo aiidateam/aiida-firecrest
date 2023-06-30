@@ -67,7 +67,7 @@ jobs:
         docker-compose build openapi
         docker-compose build jaeger
 
-        docker-compose build certificator
+        # docker-compose build certificator
       working-directory: .demo-server/deploy/demo
 
     - name: Ensure permissions of SSH Keys
