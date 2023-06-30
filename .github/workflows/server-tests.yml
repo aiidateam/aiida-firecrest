@@ -45,10 +45,12 @@ jobs:
       with:
         key: ${{ runner.os }}-docker-${{ matrix.firecrest-version }}
 
+    # note, for some reason, the certificator image fails to build
+    # if you build them in order, so here we build everything except that first
+    # and then it seems to work
     - name: Build the FirecREST images
       run: |
         docker-compose build f7t-base
-        # docker-compose build certificator
         docker-compose build compute
         docker-compose build status
         docker-compose build storage
@@ -64,6 +66,8 @@ jobs:
         docker-compose build opa
         docker-compose build openapi
         docker-compose build jaeger
+
+        docker-compose build certificator
       working-directory: .demo-server/deploy/demo
 
     - name: Ensure permissions of SSH Keys
