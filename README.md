@@ -127,6 +127,8 @@ tox
 
 By default, the tests are run using a mock FirecREST server, in a temporary folder
 (see [aiida_fircrest.utils_test.FirecrestConfig](aiida_firecrest/utils_test.py)).
+This allows for quick testing and debugging of the plugin, without needing to connect to a real server,
+but is obviously not guaranteed to be fully representative of the real behaviour.
 
 You can also provide connections details to a real FirecREST server:
 
