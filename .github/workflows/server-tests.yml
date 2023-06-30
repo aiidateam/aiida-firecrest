@@ -44,6 +44,10 @@ jobs:
         chmod 400 .demo-server/deploy/test-build/environment/keys/ca-key
         chmod 400 .demo-server/deploy/test-build/environment/keys/user-key
 
+    - name: Build the docker images
+      run: docker-compose build
+      working-directory: .demo-server/deploy/demo
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:

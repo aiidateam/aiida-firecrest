@@ -66,7 +66,6 @@ def main(args: list[str] | None = None):
 
     # ensure permissions of SSH keys (chmod 400)
     print("Ensuring permissions of SSH keys")
-    # tester/deploy/test-build/environment/keys/ca-key
     folder.joinpath("deploy", "test-build", "environment", "keys", "ca-key").chmod(
         0o400
     )
