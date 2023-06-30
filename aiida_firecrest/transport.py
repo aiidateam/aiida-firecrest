@@ -355,6 +355,9 @@ class FirecrestTransport(Transport):
                     and platform.system() == "Darwin"
                 ):
                     # TODO when using the demo server on a Mac, the wrong IP is provided
+                    # and even then a 403 error is returned, due to a signature mismatch
+                    # note you can directly directly download the file from:
+                    # "/path/to/firecrest/deploy/demo/minio" + urlparse(url).path
                     url = url.replace("192.168.220.19", "localhost")
                 with request.urlopen(url) as response, local.open("wb") as handle:
                     shutil.copyfileobj(response, handle)

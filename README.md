@@ -91,13 +91,15 @@ Append text
 
 See also the [pyfirecrest CLI](https://github.com/eth-cscs/pyfirecrest), for directly interacting with a FirecREST server.
 
+See [tests/test_calculation.py](tests/test_calculation.py) for a working example of how to use the plugin, via the AiiDA API.
+
 ### Current Issues
 
 Simple calculations are now running successfully [in the tests](tests/test_calculation.py), however, there are still some critical issues, before this could be production ready:
 
 1. Currently uploading via firecrest changes `_aiidasubmit.sh` to `aiidasubmit.sh` 😱 ([see #191](https://github.com/eth-cscs/firecrest/issues/191)), so `metadata.options.submit_script_filename` should be set to this.
 
-2. Handling of large (>5Mb) files needs to be improved
+2. Handling of large (>5Mb) file uploads/downloads needs to be improved
 
 3. Handling of the client secret, which should likely not be stored in the database
 
@@ -157,10 +159,22 @@ In this mode, if you want to inspect the generated files, after a failure, you c
 tox -- --firecrest-config=".firecrest-demo-config.json" --firecrest-no-clean
 ```
 
-See [firecrest_demo.py](firecrest_demo.py) for how to start up a demo server.
-(note the issue with OSX and turning off the AirPlay port)
+See [firecrest_demo.py](firecrest_demo.py) for how to start up a demo server,
+and also [server-tests.yml](.github/workflows/server-tests.yml) for how the tests are run against the demo server on GitHub Actions.
 
-If you are testing against the demo server, and using a Mac,
-you should also ensure that you set `FIRECREST_LOCAL_TESTING = true` in your environment.
-This handles a current issue, whereby for uploading a large file,
-the URL `192.168.220.19` is provided, but actually only `localhost` works.
+### Notes on using the demo server on MacOS
+
+A few issues have been noted when using the demo server on MacOS (non-Mx):
+
+`docker-compose up` can fail, with an error that port 7000 is already in use.
+Running `lsof -i :7000` you may see it is used by `afs3-fileserver`,
+which can be fixed by turning off the Airplay receiver
+(see <https://github.com/cookiecutter/cookiecutter-django/issues/3499>)
+
+Large file uploads can fail, because the server provides a URL with ``192.168.220.19`` that actually needs to be ``localhost``.
+To fix this, ensure that you set `FIRECREST_LOCAL_TESTING = true` in your environment
+(set by default if running `tox`).
+
+Large file downloads has the same problem, but even with this fix, it will still fail with a 403 HTTP error, due to a signature mismatch.
+No automatic workaround has been found for this yet,
+although it is of note that you can find these files directly where you your `firecrest` Github repo is cloned, `/path/to/firecrest/deploy/demo/minio/` plus the path of the URL.
