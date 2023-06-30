@@ -39,6 +39,12 @@ jobs:
         ref: ${{ matrix.firecrest-version }}
         path: .demo-server
 
+    - name: Cache Docker images
+      uses: jpribyl/action-docker-layer-caching@v0.1.1
+      continue-on-error: true
+      with:
+        key: ${{ runner.os }}-docker-${{ matrix.firecrest-version }}
+
     - name: Build the FirecREST images
       run: |
         docker-compose build f7t-base
@@ -59,12 +65,6 @@ jobs:
         docker-compose build openapi
         docker-compose build jaeger
       working-directory: .demo-server/deploy/demo
-
-    - name: Cache Docker images
-      uses: actions/cache@v3
-      with:
-        path: /var/lib/docker
-        key: ${{ runner.os }}-docker-${{ matrix.firecrest-version }}
 
     - name: Ensure permissions of SSH Keys
       run: |
