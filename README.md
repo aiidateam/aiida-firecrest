@@ -1,7 +1,8 @@
 # aiida-firecrest [IN-DEVELOPMENT]
 
-AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/) (currently based on [v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0)),
-via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
+AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/), via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
+
+It is currently tested against [FirecREST v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0).
 
 ## Usage
 
@@ -25,6 +26,7 @@ Authentication parameters:
   client_id: FirecREST client ID
   client_secret: FirecREST client secret
   client_machine: FirecREST machine secret
+  small_file_size_mb: Below this size, file bytes will be sent in a single API call.
 
 $ verdi plugin list aiida.schedulers firecrest
 A plugin to connect to a FirecREST server.
