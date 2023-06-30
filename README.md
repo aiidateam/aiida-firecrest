@@ -1,6 +1,6 @@
 # aiida-firecrest [IN-DEVELOPMENT]
 
-AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/) (currently based on [v1.12.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.12.0)),
+AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/) (currently based on [v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0)),
 via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
 
 ## Usage
@@ -125,14 +125,18 @@ It is recommended to run the tests via [tox](https://tox.readthedocs.io/en/lates
 tox
 ```
 
-By default, the tests are run using a mock FirecREST server (in a temporary folder).
+By default, the tests are run using a mock FirecREST server, in a temporary folder
+(see [aiida_fircrest.utils_test.FirecrestConfig](aiida_firecrest/utils_test.py)).
+This allows for quick testing and debugging of the plugin, without needing to connect to a real server,
+but is obviously not guaranteed to be fully representative of the real behaviour.
+
 You can also provide connections details to a real FirecREST server:
 
 ```bash
-tox -- --firecrest-config=".firecrest-config.json"
+tox -- --firecrest-config=".firecrest-demo-config.json"
 ```
 
-The format of the `.firecrest-config.json` file is:
+The format of the `.firecrest-demo-config.json` file is:
 
 ```json
 {
@@ -148,8 +152,8 @@ The format of the `.firecrest-config.json` file is:
 In this mode, if you want to inspect the generated files, after a failure, you can use:
 
 ```bash
-tox -- --firecrest-config=".firecrest-config.json" --firecrest-no-clean
+tox -- --firecrest-config=".firecrest-demo-config.json" --firecrest-no-clean
 ```
 
 See [firecrest_demo.py](firecrest_demo.py) for how to start up a demo server.
-(note the issue with OSX abd turning off the AirPlay port)
+(note the issue with OSX and turning off the AirPlay port)
