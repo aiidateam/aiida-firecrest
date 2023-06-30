@@ -39,15 +39,10 @@ jobs:
         ref: ${{ matrix.firecrest-version }}
         path: .demo-server
 
-    - name: Ensure permissions of SSH Keys
-      run: |
-        chmod 400 .demo-server/deploy/test-build/environment/keys/ca-key
-        chmod 400 .demo-server/deploy/test-build/environment/keys/user-key
-
     - name: Build the FirecREST images
       run: |
         docker-compose build f7t-base
-        # docker-compose build certificator
+        docker-compose build certificator
         docker-compose build compute
         docker-compose build status
         docker-compose build storage
@@ -65,8 +60,16 @@ jobs:
         docker-compose build jaeger
       working-directory: .demo-server/deploy/demo
 
-    - name: check existing images
-      run: docker image list --all
+    - name: Cache Docker images
+      uses: actions/cache@v3
+      with:
+        path: /var/lib/docker
+        key: ${{ runner.os }}-docker-${{ matrix.firecrest-version }}
+
+    - name: Ensure permissions of SSH Keys
+      run: |
+        chmod 400 .demo-server/deploy/test-build/environment/keys/ca-key
+        chmod 400 .demo-server/deploy/test-build/environment/keys/user-key
 
     # - name: Build and start the FirecREST server
     #   run: docker-compose up --build --detach
