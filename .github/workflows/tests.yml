@@ -17,16 +17,24 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v1
       with:
-        python-version: "3.8"
-    - uses: pre-commit/action@v2.0.0
+        python-version: "3.9"
+    - uses: pre-commit/action@v3.0.0
 
   tests:
+
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.9", "3.10", "3.11"]
         os: ['ubuntu-latest']
+
+    services:
+     rabbitmq:
+        image: rabbitmq:3.8.14-management
+        ports:
+          - 5672:5672
+          - 15672:15672
 
     steps:
     - uses: actions/checkout@v2

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Callable, Iterator
+from typing import Any, Callable
 
 from aiida.schedulers import SchedulerError
 from firecrest.BasicClient import logger as FcLogger

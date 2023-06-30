@@ -6,6 +6,7 @@ https://github.com/eth-cscs/pyfirecrest/pull/43
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
@@ -13,7 +14,7 @@ import os
 from pathlib import PurePosixPath
 import stat
 import tempfile
-from typing import Iterator, TypeVar
+from typing import TypeVar
 
 from firecrest import ClientCredentialsAuth, Firecrest
 

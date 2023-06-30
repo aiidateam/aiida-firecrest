@@ -1,5 +1,5 @@
 default_language_version:
-    python: python3.8
+    python: python3.9
 
 ci:
     autoupdate_schedule: monthly
@@ -24,7 +24,7 @@ repos:
     rev: v3.6.0
     hooks:
     - id: pyupgrade
-      args: [--py38-plus]
+      args: [--py39-plus]
 
   - repo: https://github.com/psf/black
     rev: 23.3.0
