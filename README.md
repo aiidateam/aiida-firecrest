@@ -101,7 +101,7 @@ Simple calculations are now running successfully [in the tests](tests/test_calcu
 
 3. Handling of the client secret, which should likely not be stored in the database
 
-4. Monitoring / management of API requests could to be improved
+4. Monitoring / management of API request rates could to be improved
 
 ## Development
 
@@ -159,3 +159,8 @@ tox -- --firecrest-config=".firecrest-demo-config.json" --firecrest-no-clean
 
 See [firecrest_demo.py](firecrest_demo.py) for how to start up a demo server.
 (note the issue with OSX and turning off the AirPlay port)
+
+If you are testing against the demo server, and using a Mac,
+you should also ensure that you set `FIRECREST_LOCAL_TESTING = true` in your environment.
+This handles a current issue, whereby for uploading a large file,
+the URL `192.168.220.19` is provided, but actually only `localhost` works.

@@ -24,7 +24,7 @@ class FirecrestConfig:
     client_secret: str
     machine: str
     scratch_path: str
-    small_file_size_mb: float = 5.0
+    small_file_size_mb: float = 1.0
 
 
 class FirecrestMockServer:
@@ -52,7 +52,7 @@ class FirecrestMockServer:
         self._slurm_jobs: dict[str, dict[str, Any]] = {}
 
         self._task_id_counter = 0
-        self._tasks: dict[str, ActiveSchedulerJobsTask | ScheduledJobTask] = {}
+        self._tasks: dict[str, Task] = {}
 
     @property
     def scratch(self) -> Path:
@@ -131,7 +131,9 @@ class FirecrestMockServer:
         elif endpoint == "/compute/jobs":
             self.compute_jobs(params or {}, response)
         elif endpoint.startswith("/tasks/"):
-            return self.handle_task(endpoint[7:], response)
+            self.handle_task(endpoint[7:], response)
+        elif endpoint == "/storage/xfer-external/upload":
+            self.storage_xfer_external_upload(data or {}, response)
         else:
             raise requests.exceptions.InvalidURL(f"Unknown endpoint: {endpoint}")
 
@@ -152,7 +154,7 @@ class FirecrestMockServer:
                 response, 404, {"error": f"Task {task_id} does not exist"}
             )
 
-        task = self._tasks.pop(task_id)
+        task = self._tasks[task_id]
 
         if isinstance(task, ActiveSchedulerJobsTask):
             if task.jobs is not None:
@@ -214,13 +216,91 @@ class FirecrestMockServer:
                         "task_id": task.task_id,
                         "user": self._username,
                         # "task_url": "...",
-                        # "hash_id": "ed2834ba97ce683b0699848fadfa35b9",
+                        # "hash_id": "...",
                         # "created_at": "2023-06-29T16:30:24",
                         # "last_modify": "2023-06-29T16:30:25",
                         # "updated_at": "2023-06-29T16:30:25",
                     }
                 },
             )
+
+        if isinstance(task, StorageXferExternalUploadTask):
+            # to mock this once the Form URL is retrieved (110), we move straight to the
+            # "Download from Object Storage to server has finished" (114) for the next request
+            # this skips statuses 111, 112 and 113 (see pyfirecrest.ExternalUpload)
+            # and so we are assuming that the file is uploaded to the server
+
+            if not task.form_retrieved:
+                task.form_retrieved = True
+                return add_json_response(
+                    response,
+                    200,
+                    {
+                        "task": {
+                            "data": {
+                                # "hash_id": "fd690c43e6ee509359b9e2c3237f4cc5",
+                                "msg": {
+                                    "command": "echo 'mock'",
+                                    # "command": "curl --show-error -s -i -X POST http://192.168.220.19:9000/service-account-firecrest-sample -F 'key=fd690c43e6ee509359b9e2c3237f4cc5/file.txt' -F 'x-amz-algorithm=AWS4-HMAC-SHA256' -F 'x-amz-credential=storage_access_key/202306/us-east-1/s3/aws4_request' -F 'x-amz-date=20230630T155026Z' -F 'policy=xxx' -F 'x-amz-signature=yyy' -F file=@/private/var/folders/t2/xbl15_3n4tsb1vr_ccmmtmbr0000gn/T/pytest-of-chrisjsewell/pytest-340/test_putfile_large0/file.txt",  # noqa: E501
+                                    "parameters": {
+                                        # "data": {
+                                        #     "key": "fd690c43e6ee509359b9e2c3237f4cc5/file.txt",
+                                        #     "policy": "xxx",
+                                        #     "x-amz-algorithm": "AWS4-HMAC-SHA256",
+                                        #     "x-amz-credential": "storage_access_key/202306/us-east-1/s3/aws4_request",
+                                        #     "x-amz-date": "20230630T155026Z",
+                                        #     "x-amz-signature": "yyy",
+                                        # },
+                                        "files": str(task.target),
+                                        "headers": {},
+                                        "json": {},
+                                        "method": "POST",
+                                        "params": {},
+                                        # "url": "http://192.168.220.19:9000/service-account-firecrest-sample",
+                                    },
+                                },
+                                "status": "111",
+                                "source": str(task.source),
+                                "target": str(task.target),
+                                # "system_addr": "192.168.220.12:22",
+                                # "system_name": "cluster",
+                                # "trace_id": "d5a45c91e0390fa4f4f5296ddb4bf511:6f925a63f3e6ac4f:84525bc7447d25a4:1",
+                                "user": self._username,
+                            },
+                            "description": "Form URL from Object Storage received",
+                            "service": "storage",
+                            "status": "111",
+                            "user": self._username,
+                            "task_id": task.task_id,
+                            # "hash_id": "...",
+                            # "task_url": "...",
+                            # "created_at": "2023-06-30T15:50:26",
+                            # "last_modify": "2023-06-30T15:50:26",
+                            # "updated_at": "2023-06-30T15:50:26",
+                        },
+                    },
+                )
+            else:
+                shutil.copy(task.source, task.target)
+                return add_json_response(
+                    response,
+                    200,
+                    {
+                        "task": {
+                            "data": "Download from Object Storage to server has finished",
+                            "description": "Download from Object Storage to server has finished",
+                            "service": "storage",
+                            "status": "114",
+                            "task_id": task.task_id,
+                            "user": self._username,
+                            "hash_id": "598608eef16ecdbe4de7612566291754",
+                            "updated_at": "2023-06-30T16:25:18",
+                            "last_modify": "2023-06-30T16:25:18",
+                            "created_at": "2023-06-30T16:24:39",
+                            "task_url": "...",
+                        }
+                    },
+                )
 
         raise NotImplementedError(f"Unknown task type: {type(task)}")
 
@@ -325,20 +405,51 @@ class FirecrestMockServer:
             {"success": "Task created", "task_url": "notset", "task_id": task_id},
         )
 
+    def storage_xfer_external_upload(
+        self, data: dict[str, Any], response: Response
+    ) -> None:
+        source = Path(data["sourcePath"])
+        target = Path(data["targetPath"])
+        if not target.parent.exists():
+            response.status_code = 400
+            response.headers["X-Not-Found"] = ""
+            return
+        task_id = self.new_task_id()
+        self._tasks[task_id] = StorageXferExternalUploadTask(task_id, source, target)
+        add_json_response(
+            response,
+            201,
+            {
+                "success": "Task created",
+                "task_id": task_id,
+                "task_url": "...",
+            },
+        )
+
 
 @dataclass
-class ActiveSchedulerJobsTask:
+class Task:
     task_id: str
+
+
+@dataclass
+class ActiveSchedulerJobsTask(Task):
     jobs: list[str] | None
 
 
 @dataclass
-class ScheduledJobTask:
-    task_id: str
+class ScheduledJobTask(Task):
     job_id: str
     script_path: Path
     stdout_path: Path
     stderr_path: Path
+
+
+@dataclass
+class StorageXferExternalUploadTask(Task):
+    source: Path
+    target: Path
+    form_retrieved: bool = False
 
 
 def add_json_response(
@@ -484,7 +595,20 @@ def utilities_upload(
         response.status_code = 400
         response.headers["X-Invalid-Path"] = ""
         return
-    path.write_bytes(fbuffer.read())
+
+    max_size_bytes = 5 * 1024 * 1024
+    fbytes = fbuffer.read()
+    if len(fbytes) > max_size_bytes:
+        add_json_response(
+            response,
+            413,
+            {
+                "description": f"Failed to upload file. The file is over {max_size_bytes} bytes"
+            },
+        )
+        return
+
+    path.write_bytes(fbytes)
     add_success_response(response, 201)
 
 
