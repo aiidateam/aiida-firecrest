@@ -125,7 +125,9 @@ It is recommended to run the tests via [tox](https://tox.readthedocs.io/en/lates
 tox
 ```
 
-By default, the tests are run using a mock FirecREST server (in a temporary folder).
+By default, the tests are run using a mock FirecREST server, in a temporary folder
+(see [aiida_fircrest.utils_test.FirecrestConfig](aiida_firecrest/utils_test.py)).
+
 You can also provide connections details to a real FirecREST server:
 
 ```bash
