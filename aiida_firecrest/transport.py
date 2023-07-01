@@ -233,6 +233,9 @@ class FirecrestTransport(Transport):
             names = fnmatch.filter(names, pattern)
         return names
 
+    # TODO the default implementations of glob / iglob could be overriden
+    # to be more performant, using cached FcPaths and https://github.com/chrisjsewell/virtual-glob
+
     def write_binary(self, path: str, data: bytes) -> None:
         """Write bytes to a file on the remote."""
         # Note this is not part of the Transport interface, but is useful for testing
