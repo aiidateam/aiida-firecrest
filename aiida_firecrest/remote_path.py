@@ -393,6 +393,8 @@ class FcPath(os.PathLike):
 
     def iterdir(self: SelfTv, hidden=True) -> Iterator[SelfTv]:
         """Iterate over the directory entries."""
+        if not self.is_dir():
+            return
         with convert_header_exceptions({"machine": self._machine, "path": self}):
             results = self._client.list_files(
                 self._machine, self.path, show_hidden=hidden

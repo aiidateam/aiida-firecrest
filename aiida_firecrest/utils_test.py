@@ -371,12 +371,13 @@ class FirecrestMockServer:
             response.headers["X-Invalid-Path"] = ""
             return
         data = []
-        for item in path.iterdir():
-            _stat = item.stat()
+        # note ls returns the file if the path is a file
+        for item in path.iterdir() if path.is_dir() else [path]:
+            _stat = item.lstat()
             data.append(
                 {
                     "name": item.name,
-                    "permissions": stat.filemode(_stat.st_mode),
+                    "permissions": stat.filemode(_stat.st_mode)[1:],
                     "type": "l" if item.is_symlink() else "d" if item.is_dir() else "-",
                     "size": _stat.st_size,
                 }
