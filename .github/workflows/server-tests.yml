@@ -8,7 +8,11 @@ on:
     branches: [main]
     tags:
       - 'v*'
-  pull_request:  # TODO delete
+  pull_request:
+    paths-ignore:
+      - README.md
+      - CHANGELOG.md
+      - "docs/**"
 
 jobs:
 
