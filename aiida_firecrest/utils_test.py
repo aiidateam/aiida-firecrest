@@ -128,6 +128,8 @@ class FirecrestMockServer:
             self.utilities_chmod(data or {}, response)
         # elif endpoint == "/utilities/chown":
         #     utilities_chown(data or {}, response)
+        elif endpoint == "/utilities/rename":
+            self.utilities_rename(data or {}, response)
         elif endpoint == "/utilities/upload":
             self.utilities_upload(data or {}, files or {}, response)
         elif endpoint == "/utilities/download":
@@ -394,6 +396,20 @@ class FirecrestMockServer:
         path.chmod(int(data["mode"], 8))
         add_success_response(response, 200)
 
+    def utilities_rename(self, data: dict[str, Any], response: Response) -> None:
+        source = Path(data["sourcePath"])
+        target = Path(data["targetPath"])
+        if not source.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        if target.exists():
+            response.status_code = 400
+            response.headers["X-Exists"] = ""
+            return
+        source.rename(target)
+        add_success_response(response, 200)
+
     def utilities_mkdir(self, data: dict[str, Any], response: Response) -> None:
         path = Path(data["targetPath"])
         if path.exists():
@@ -409,7 +425,10 @@ class FirecrestMockServer:
             response.status_code = 400
             response.headers["X-Invalid-Path"] = ""
             return
-        path.unlink()
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
         add_success_response(response, 204)
 
     def utilities_copy(self, data: dict[str, Any], response: Response) -> None:
