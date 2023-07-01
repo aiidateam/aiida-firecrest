@@ -44,3 +44,5 @@ repos:
       additional_dependencies:
       - "types-PyYAML"
       - "types-requests"
+      - "pyfirecrest~=1.4.0"
+      - "aiida-core~=2.4.0"
