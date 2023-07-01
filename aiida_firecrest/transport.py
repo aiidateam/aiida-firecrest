@@ -503,17 +503,17 @@ class FirecrestTransport(Transport):
 
     def gotocomputer_command(self, remotedir: str) -> str:
         # TODO remove from interface
-        raise NotImplementedError
+        raise NotImplementedError("firecrest does not support gotocomputer_command")
 
     def _exec_command_internal(self, command: str, **kwargs: Any) -> Any:
         # TODO remove from interface
-        raise NotImplementedError
+        raise NotImplementedError("firecrest does not support command execution")
 
     def exec_command_wait_bytes(
         self, command: str, stdin: Any = None, **kwargs: Any
     ) -> Any:
         # TODO remove from interface
-        raise NotImplementedError
+        raise NotImplementedError("firecrest does not support command execution")
 
 
 def validate_non_empty_string(ctx, param, value):  # type: ignore

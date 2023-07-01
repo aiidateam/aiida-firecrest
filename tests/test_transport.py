@@ -27,6 +27,22 @@ def test_path_exists(firecrest_server: FirecrestConfig, transport: FirecrestTran
     assert not transport.path_exists(firecrest_server.scratch_path + "/file.txt")
 
 
+def test_get_attribute(
+    firecrest_server: FirecrestConfig, transport: FirecrestTransport
+):
+    transport._cwd.joinpath("test.txt").touch()
+    attrs = transport.get_attribute(firecrest_server.scratch_path + "/test.txt")
+    assert set(attrs) == {
+        "st_size",
+        "st_atime",
+        "st_mode",
+        "st_gid",
+        "st_mtime",
+        "st_uid",
+    }
+    assert isinstance(attrs.st_mode, int)
+
+
 def test_isdir(firecrest_server: FirecrestConfig, transport: FirecrestTransport):
     assert transport.isdir(firecrest_server.scratch_path)
     assert not transport.isdir(firecrest_server.scratch_path + "/other")
@@ -65,7 +81,6 @@ def test_large_file_transfers(
 
 def test_listdir(firecrest_server: FirecrestConfig, transport: FirecrestTransport):
     assert transport.listdir(firecrest_server.scratch_path) == []
-    # TODO make file/folder then re-test
 
 
 def test_copyfile(firecrest_server: FirecrestConfig, transport: FirecrestTransport):
@@ -110,3 +125,29 @@ def test_copyfile_symlink_deref(
     transport.copyfile(from_path_symlink, to_path, dereference=True)
     assert transport.isfile(to_path)
     assert transport.read_binary(to_path) == b"test"
+
+
+def test_remove(firecrest_server: FirecrestConfig, transport: FirecrestTransport):
+    transport.write_binary(firecrest_server.scratch_path + "/file.txt", b"test")
+    assert transport.path_exists(firecrest_server.scratch_path + "/file.txt")
+    transport.remove(firecrest_server.scratch_path + "/file.txt")
+    assert not transport.path_exists(firecrest_server.scratch_path + "/file.txt")
+
+
+def test_rmtree(firecrest_server: FirecrestConfig, transport: FirecrestTransport):
+    transport.mkdir(firecrest_server.scratch_path + "/test")
+    transport.write_binary(firecrest_server.scratch_path + "/test/file.txt", b"test")
+    assert transport.path_exists(firecrest_server.scratch_path + "/test/file.txt")
+    transport.rmtree(firecrest_server.scratch_path + "/test")
+    assert not transport.path_exists(firecrest_server.scratch_path + "/test")
+
+
+def test_rename(firecrest_server: FirecrestConfig, transport: FirecrestTransport):
+    transport.write_binary(firecrest_server.scratch_path + "/file.txt", b"test")
+    assert transport.path_exists(firecrest_server.scratch_path + "/file.txt")
+    transport.rename(
+        firecrest_server.scratch_path + "/file.txt",
+        firecrest_server.scratch_path + "/file2.txt",
+    )
+    assert not transport.path_exists(firecrest_server.scratch_path + "/file.txt")
+    assert transport.path_exists(firecrest_server.scratch_path + "/file2.txt")
