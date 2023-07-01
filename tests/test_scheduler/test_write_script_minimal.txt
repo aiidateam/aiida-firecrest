@@ -1,0 +1,5 @@
+#!/bin/bash
+#SBATCH --no-requeue
+#SBATCH --error=slurm-%j.err
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
