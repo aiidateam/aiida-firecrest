@@ -44,7 +44,7 @@ firecrest = "aiida_firecrest.scheduler:FirecrestScheduler"
 firecrest = "aiida_firecrest.transport:FirecrestTransport"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-timeout", "pgtest"]
+dev = ["pytest", "pytest-cov", "pytest-regressions", "pytest-timeout", "pgtest"]
 docs = ["furo==2023.5.20"]
 
 [tool.flit.sdist]

@@ -1,5 +1,6 @@
 """Tests isolating only the Scheduler."""
 from aiida.schedulers import SchedulerError
+from aiida.schedulers.datastructures import CodeRunMode, JobTemplate
 import pytest
 
 from aiida_firecrest.scheduler import FirecrestScheduler
@@ -45,3 +46,47 @@ def test_submit_job(transport: FirecrestTransport):
 
     job_id = scheduler.submit_job(transport.getcwd(), "job.sh")
     assert isinstance(job_id, str)
+
+
+def test_write_script_minimal(file_regression):
+    scheduler = FirecrestScheduler()
+    template = JobTemplate(
+        {
+            "job_resource": scheduler.create_job_resource(
+                num_machines=1, num_mpiprocs_per_machine=1
+            ),
+            "codes_info": [],
+            "codes_run_mode": CodeRunMode.SERIAL,
+        }
+    )
+    file_regression.check(scheduler.get_submit_script(template).rstrip() + "\n")
+
+
+def test_write_script_full(file_regression):
+    scheduler = FirecrestScheduler()
+    template = JobTemplate(
+        {
+            "job_resource": scheduler.create_job_resource(
+                num_machines=1, num_mpiprocs_per_machine=1
+            ),
+            "codes_info": [],
+            "codes_run_mode": CodeRunMode.SERIAL,
+            "submit_as_hold": True,
+            "rerunnable": True,
+            "email": True,
+            "email_on_started": True,
+            "email_on_terminated": True,
+            "job_name": "test_job",
+            "import_sys_environment": True,
+            "sched_output_path": "test.out",
+            "sched_error_path": "test.err",
+            "queue_name": "test_queue",
+            "account": "test_account",
+            "qos": "test_qos",
+            "priority": 100,
+            "max_wallclock_seconds": 3600,
+            "max_memory_kb": 1024,
+            "custom_scheduler_commands": "test_command",
+        }
+    )
+    file_regression.check(scheduler.get_submit_script(template).rstrip() + "\n")
