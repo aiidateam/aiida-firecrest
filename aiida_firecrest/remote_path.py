@@ -14,9 +14,9 @@ import os
 from pathlib import PurePosixPath
 import stat
 import tempfile
-from typing import TypeVar
+from typing import Callable, TypeVar
 
-from firecrest import ClientCredentialsAuth, Firecrest
+from firecrest import ClientCredentialsAuth, Firecrest  # type: ignore[attr-defined]
 
 from .utils import convert_header_exceptions
 
@@ -44,7 +44,7 @@ class ModeCache:
         self.lst_mode = None
 
 
-class FcPath(os.PathLike):
+class FcPath(os.PathLike[str]):
     """A pathlib.Path-like object for accessing the file system via the Firecrest API."""
 
     __slots__ = ("_client", "_machine", "_path", "_cache_enabled", "_cache")
@@ -81,7 +81,7 @@ class FcPath(os.PathLike):
     @classmethod
     def from_env_variables(
         cls, machine: str, path: str | PurePosixPath, *, cache_enabled: bool = False
-    ):
+    ) -> FcPath:
         """Convenience method, to construct a new FcPath using environmental variables.
 
         The following environment variables are required:
@@ -191,7 +191,7 @@ class FcPath(os.PathLike):
         return self._path.suffix
 
     @property
-    def suffixes(self):
+    def suffixes(self) -> list[str]:
         """
         A list of the final component's suffixes, if any.
 
@@ -250,7 +250,7 @@ class FcPath(os.PathLike):
                 endpoint="/utilities/whoami",
                 additional_headers={"X-Machine-Name": self._machine},
             )
-            return self._client._json_response([resp], 200)["output"]
+            return self._client._json_response([resp], 200)["output"]  # type: ignore
 
     def checksum(self) -> str:
         """Return the SHA256 (256-bit) checksum of the file."""
@@ -391,7 +391,7 @@ class FcPath(os.PathLike):
             return False
         return stat.S_ISSOCK(st_mode)
 
-    def iterdir(self: SelfTv, hidden=True) -> Iterator[SelfTv]:
+    def iterdir(self: SelfTv, hidden: bool = True) -> Iterator[SelfTv]:
         """Iterate over the directory entries."""
         if not self.is_dir():
             return
@@ -606,9 +606,9 @@ def _ls_to_st_mode(ftype: str, permissions: str) -> int:
     if ftype not in ftypes:
         raise ValueError(f"invalid file type: {ftype}")
     p = permissions
-    r = lambda x: 4 if x == "r" else 0  # noqa: E731
-    w = lambda x: 2 if x == "w" else 0  # noqa: E731
-    x = lambda x: 1 if x == "x" else 0  # noqa: E731
+    r: Callable[[str], int] = lambda x: 4 if x == "r" else 0  # noqa: E731
+    w: Callable[[str], int] = lambda x: 2 if x == "w" else 0  # noqa: E731
+    x: Callable[[str], int] = lambda x: 1 if x == "x" else 0  # noqa: E731
     st_mode = (
         ((r(p[0]) + w(p[1]) + x(p[2])) * 100)
         + ((r(p[3]) + w(p[4]) + x(p[5])) * 10)

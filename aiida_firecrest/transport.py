@@ -8,7 +8,7 @@ import platform
 import posixpath
 import shutil
 import time
-from typing import Any, ClassVar, TypedDict
+from typing import Any, Callable, ClassVar, TypedDict
 from urllib import request
 
 from aiida.cmdline.params.options.overridable import OverridableOption
@@ -16,12 +16,12 @@ from aiida.transports import Transport
 from aiida.transports.transport import validate_positive_number
 from aiida.transports.util import FileAttribute
 from click.types import ParamType
-import firecrest as f7t
+from firecrest import ClientCredentialsAuth, Firecrest  # type: ignore[attr-defined]
 
-from .remote_path import FcPath, convert_header_exceptions
+from .remote_path import FcPath, convert_header_exceptions  # type: ignore[attr-defined]
 
 
-class ValidAuthOption(TypedDict, total=False):  # type: ignore
+class ValidAuthOption(TypedDict, total=False):
     option: OverridableOption | None  # existing option
     switch: bool  # whether the option is a boolean flag
     type: type[Any] | ParamType
@@ -29,6 +29,7 @@ class ValidAuthOption(TypedDict, total=False):  # type: ignore
     non_interactive_default: bool  # whether option should provide a default in non-interactive mode
     prompt: str  # for interactive CLI
     help: str
+    callback: Callable[..., Any]  # for validation
 
 
 class FirecrestTransport(Transport):
@@ -43,10 +44,10 @@ class FirecrestTransport(Transport):
     #   across all transport instances
     # TODO upstream issue
     # TODO also open an issue that the `verdi computer test won't work with a REST-API`
-    _common_auth_options: ClassVar[list[Any]] = []
+    _common_auth_options: ClassVar[list[Any]] = []  # type: ignore[misc]
     _DEFAULT_SAFE_OPEN_INTERVAL = 0.0
 
-    _valid_auth_options: ClassVar[list[tuple[str, dict]]] = [
+    _valid_auth_options: ClassVar[list[tuple[str, ValidAuthOption]]] = [  # type: ignore[misc]
         (
             "url",
             {
@@ -131,7 +132,8 @@ class FirecrestTransport(Transport):
         # TODO ideally hostname would not be necessary on a computer
         **kwargs: Any,
     ):
-        super().__init__(**kwargs)
+        """Construct a FirecREST transport."""
+        super().__init__(**kwargs)  # type: ignore
 
         assert isinstance(url, str), "url must be a string"
         assert isinstance(token_uri, str), "token_uri must be a string"
@@ -157,9 +159,9 @@ class FirecrestTransport(Transport):
             else client_secret
         )
 
-        self._client = f7t.Firecrest(
+        self._client = Firecrest(
             firecrest_url=self._url,
-            authorization=f7t.ClientCredentialsAuth(client_id, secret, token_uri),
+            authorization=ClientCredentialsAuth(client_id, secret, token_uri),
         )
 
         self._cwd: FcPath = FcPath(self._client, self._machine, "/")
@@ -178,10 +180,10 @@ class FirecrestTransport(Transport):
             [f"  {k}: {v.get('help', '')}" for k, v in cls.auth_options.items()]
         )
 
-    def open(self):  # noqa: A003
+    def open(self) -> None:  # noqa: A003
         pass
 
-    def close(self):
+    def close(self) -> None:
         pass
 
     def getcwd(self) -> str:
@@ -190,19 +192,19 @@ class FirecrestTransport(Transport):
     def _get_path(self, *path: str) -> str:
         return posixpath.normpath(self._cwd.joinpath(*path))
 
-    def chdir(self, path) -> None:
+    def chdir(self, path: str) -> None:
         new_path = self._cwd.joinpath(path)
         if not new_path.is_dir():
             raise OSError(f"'{new_path}' is not a valid directory")
         self._cwd = new_path
 
-    def normalize(self, path="."):
+    def normalize(self, path: str = ".") -> str:
         return posixpath.normpath(path)
 
     def chmod(self, path: str, mode: str) -> None:
         self._cwd.joinpath(path).chmod(mode)
 
-    def chown(self, path, uid: str, gid: str) -> None:
+    def chown(self, path: str, uid: str, gid: str) -> None:
         self._cwd.joinpath(path).chown(uid, gid)
 
     def path_exists(self, path: str) -> bool:
@@ -210,7 +212,7 @@ class FirecrestTransport(Transport):
 
     def get_attribute(self, path: str) -> FileAttribute:
         result = self._cwd.joinpath(path).stat()
-        return FileAttribute(
+        return FileAttribute(  # type: ignore
             {
                 "st_size": result.st_size,
                 "st_uid": result.st_uid,
@@ -400,7 +402,9 @@ class FirecrestTransport(Transport):
         else:
             raise FileNotFoundError(f"Source file does not exist: {remote}")
 
-    def putfile(self, localpath: str, remotepath: str, *args, **kwargs):
+    def putfile(
+        self, localpath: str, remotepath: str, *args: Any, **kwargs: Any
+    ) -> None:
         if not Path(localpath).is_absolute():
             raise ValueError("The localpath must be an absolute path")
         if not Path(localpath).is_file():
@@ -445,7 +449,9 @@ class FirecrestTransport(Transport):
 
         # TODO use cwd.checksum to confirm upload is not corrupted?
 
-    def puttree(self, localpath: str | Path, remotepath: str, *args, **kwargs):
+    def puttree(
+        self, localpath: str | Path, remotepath: str, *args: Any, **kwargs: Any
+    ) -> None:
         localpath = Path(localpath)
 
         # local checks
@@ -468,7 +474,7 @@ class FirecrestTransport(Transport):
                 remotefile_path = os.path.join(remotepath, rel_folder, filename)
                 self.putfile(localfile_path, remotefile_path)
 
-    def put(self, localpath, remotepath, *args, **kwargs):
+    def put(self, localpath: str, remotepath: str, *args: Any, **kwargs: Any) -> None:
         # TODO ssh does a lot more
         if os.path.isdir(localpath):
             self.puttree(localpath, remotepath)
@@ -485,7 +491,7 @@ class FirecrestTransport(Transport):
     def rename(self, oldpath: str, newpath: str) -> None:
         self._cwd.joinpath(oldpath).rename(self._cwd.joinpath(newpath))
 
-    def rmdir(self, path: str):
+    def rmdir(self, path: str) -> None:
         # TODO check if empty
         self._cwd.joinpath(path).rmtree()
 
@@ -495,20 +501,22 @@ class FirecrestTransport(Transport):
     def whoami(self) -> str:
         return self._cwd.whoami()
 
-    def gotocomputer_command(self, remotedir: str):
+    def gotocomputer_command(self, remotedir: str) -> str:
         # TODO remove from interface
         raise NotImplementedError
 
-    def _exec_command_internal(self, command, **kwargs):
+    def _exec_command_internal(self, command: str, **kwargs: Any) -> Any:
         # TODO remove from interface
         raise NotImplementedError
 
-    def exec_command_wait_bytes(self, command, stdin=None, **kwargs):
+    def exec_command_wait_bytes(
+        self, command: str, stdin: Any = None, **kwargs: Any
+    ) -> Any:
         # TODO remove from interface
         raise NotImplementedError
 
 
-def validate_non_empty_string(ctx, param, value):  # pylint: disable=unused-argument
+def validate_non_empty_string(ctx, param, value):  # type: ignore
     """Validate that the number passed to this parameter is a positive number.
 
     :param ctx: the `click.Context`
