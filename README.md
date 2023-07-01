@@ -1,5 +1,8 @@
 # aiida-firecrest [IN-DEVELOPMENT]
 
+[![Coverage Status][codecov-badge]][codecov-link]
+[![Code style: black][black-badge]][black-link]
+
 AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/), via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
 
 It is currently tested against [FirecREST v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0).
@@ -180,3 +183,8 @@ To fix this, ensure that you set `FIRECREST_LOCAL_TESTING = true` in your enviro
 Large file downloads has the same problem, but even with this fix, it will still fail with a 403 HTTP error, due to a signature mismatch.
 No automatic workaround has been found for this yet,
 although it is of note that you can find these files directly where you your `firecrest` Github repo is cloned, `/path/to/firecrest/deploy/demo/minio/` plus the path of the URL.
+
+[codecov-badge]: https://codecov.io/gh/aiidateam/aiida-firecrest/branch/main/graph/badge.svg
+[codecov-link]: https://codecov.io/gh/aiidateam/aiida-firecrest
+[black-badge]: https://img.shields.io/badge/code%20style-black-000000.svg
+[black-link]: https://github.com/ambv/black
