@@ -284,7 +284,11 @@ class FcPath(os.PathLike):
         If the path is a symbolic link,
         stat will examine the file the link points to.
         """
-        with convert_header_exceptions({"machine": self._machine, "path": self}):
+        with convert_header_exceptions(
+            {"machine": self._machine, "path": self},
+            # TODO: remove this once issue fixed: https://github.com/eth-cscs/firecrest/issues/193
+            {"X-A-Directory": FileNotFoundError},
+        ):
             stats = self._client.stat(self._machine, self.path, dereference=True)
         return os.stat_result(
             (

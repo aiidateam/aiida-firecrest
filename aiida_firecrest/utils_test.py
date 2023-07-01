@@ -7,6 +7,7 @@ import io
 from json import dumps as json_dumps
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 from typing import Any, BinaryIO
 from urllib.parse import urlparse
@@ -369,7 +370,19 @@ class FirecrestMockServer:
             response.status_code = 400
             response.headers["X-Invalid-Path"] = ""
             return
-        add_success_response(response, 200, [{"name": f.name} for f in path.iterdir()])
+        data = []
+        for item in path.iterdir():
+            _stat = item.stat()
+            data.append(
+                {
+                    "name": item.name,
+                    "permissions": stat.filemode(_stat.st_mode),
+                    "type": "l" if item.is_symlink() else "d" if item.is_dir() else "-",
+                    "size": _stat.st_size,
+                }
+            )
+
+        add_success_response(response, 200, data)
 
     def utilities_chmod(self, data: dict[str, Any], response: Response) -> None:
         path = Path(data["targetPath"])

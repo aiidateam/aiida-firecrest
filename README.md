@@ -4,6 +4,8 @@ AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://produ
 
 It is currently tested against [FirecREST v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0).
 
+**NOTE:** This plugin is currently dependent on a fork of `aiida-core` from [PR #6043](https://github.com/aiidateam/aiida-core/pull/6043)
+
 ## Usage
 
 Install via GitHub or PyPI:
