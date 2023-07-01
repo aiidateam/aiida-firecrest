@@ -11,7 +11,7 @@ It is currently tested against [FirecREST v1.13.0](https://github.com/eth-cscs/f
 
 ## Usage
 
-Install via GitHub or PyPI:
+Install via GitHub or PyPI a:
 
 ```bash
 pip install git+https://github.com/aiidateam/aiida-firecrest.git
