@@ -83,6 +83,7 @@ class FirecrestMockServer:
         files: dict[str, tuple[str, BinaryIO]] | None = None,
         **kwargs: Any,
     ) -> Response:
+        """Mock a request to the Firecrest server."""
         response = Response()
         response.encoding = "utf-8"
         response.url = url if isinstance(url, str) else url.decode("utf-8")
