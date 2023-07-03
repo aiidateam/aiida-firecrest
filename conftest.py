@@ -1,6 +1,4 @@
-# add option to pytest
-# note this file must be at the root of the project
-
+"""Pytest configuration that must be at the root level."""
 pytest_plugins = ["aiida.manage.tests.pytest_fixtures"]
 
 
@@ -13,16 +11,8 @@ def pytest_addoption(parser):
         action="store_true",
         help="Don't clean up server after tests (for debugging)",
     )
-
-
-def pytest_report_header(config):
-    if config.getoption("--firecrest-config"):
-        header = [
-            "Running against FirecREST server: {}".format(
-                config.getoption("--firecrest-config")
-            )
-        ]
-        if config.getoption("--firecrest-no-clean"):
-            header.append("Not cleaning up FirecREST server after tests!")
-        return header
-    return ["Running against Mock FirecREST server"]
+    parser.addoption(
+        "--firecrest-requests",
+        action="store_true",
+        help="Collect and print telemetry data for API requests",
+    )

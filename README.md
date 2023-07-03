@@ -167,6 +167,13 @@ tox -- --firecrest-config=".firecrest-demo-config.json" --firecrest-no-clean
 See [firecrest_demo.py](firecrest_demo.py) for how to start up a demo server,
 and also [server-tests.yml](.github/workflows/server-tests.yml) for how the tests are run against the demo server on GitHub Actions.
 
+If you want to analyse statistics of the API requests made by each test,
+you can use the `--firecrest-requests` option:
+
+```bash
+tox -- --firecrest-requests
+```
+
 ### Notes on using the demo server on MacOS
 
 A few issues have been noted when using the demo server on MacOS (non-Mx):

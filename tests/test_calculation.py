@@ -42,6 +42,7 @@ def _firecrest_computer(firecrest_server: FirecrestConfig):
 @pytest.fixture(name="no_retries")
 def _no_retries():
     """Remove calcjob retries, to make failing the test faster."""
+    # TODO calculation seems to hang on errors still
     max_attempts = manage.get_config().get_option(MAX_ATTEMPTS_OPTION)
     manage.get_config().set_option(MAX_ATTEMPTS_OPTION, 1)
     yield
@@ -66,10 +67,6 @@ def test_calculation_basic(firecrest_computer: orm.Computer):
     # TODO currently uploading via firecrest changes _aiidasubmit.sh to aiidasubmit.sh 😱
     # https://github.com/eth-cscs/firecrest/issues/191
     builder.metadata.options.submit_script_filename = "aiidasubmit.sh"
-
-    # TODO reset in fixture? also the calculation seems to hang on errors still
-    # rather than failing immediately
-    manage.get_config().set_option(MAX_ATTEMPTS_OPTION, 1)
 
     _, node = engine.run_get_node(builder)
     assert node.is_finished_ok
