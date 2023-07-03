@@ -39,7 +39,16 @@ def _firecrest_computer(firecrest_server: FirecrestConfig):
     return computer
 
 
-@pytest.mark.usefixtures("aiida_profile_clean")
+@pytest.fixture(name="no_retries")
+def _no_retries():
+    """Remove calcjob retries, to make failing the test faster."""
+    max_attempts = manage.get_config().get_option(MAX_ATTEMPTS_OPTION)
+    manage.get_config().set_option(MAX_ATTEMPTS_OPTION, 1)
+    yield
+    manage.get_config().set_option(MAX_ATTEMPTS_OPTION, max_attempts)
+
+
+@pytest.mark.usefixtures("aiida_profile_clean", "no_retries")
 def test_calculation_basic(firecrest_computer: orm.Computer):
     """Test running a simple `arithmetic.add` calculation."""
     code = orm.InstalledCode(
@@ -66,14 +75,21 @@ def test_calculation_basic(firecrest_computer: orm.Computer):
     assert node.is_finished_ok
 
 
-@pytest.mark.usefixtures("aiida_profile_clean")
+@pytest.mark.usefixtures("aiida_profile_clean", "no_retries")
 def test_calculation_file_transfer(
     firecrest_computer: orm.Computer, entry_points: EntryPointManager
 ):
-    """Test a more calculation, with multiple files uploaded/retrieved."""
+    """Test a calculation, with multiple files copied/uploaded/retrieved."""
+    # add temporary entry points
     entry_points.add(MultiFileCalcjob, "aiida.calculations:testing.multifile")
     entry_points.add(NoopParser, "aiida.parsers:testing.noop")
 
+    # add a remote file which is used remote_copy_list
+    firecrest_computer.get_transport()._cwd.joinpath(
+        firecrest_computer.get_workdir(), "remote_copy.txt"
+    ).touch()
+
+    # setup the calculation
     code = orm.InstalledCode(
         label="test_code",
         description="test code",
@@ -82,11 +98,7 @@ def test_calculation_file_transfer(
         filepath_executable="/bin/sh",
     )
     code.store()
-
     builder = code.get_builder()
-
-    # TODO reset in fixture?
-    manage.get_config().set_option(MAX_ATTEMPTS_OPTION, 1)
 
     node: orm.CalcJobNode
     _, node = engine.run_get_node(builder)
@@ -104,6 +116,7 @@ def test_calculation_file_transfer(
         "folder1/a/b.txt",
         "folder1/a/c.txt",
         "folder2",
+        "folder2/remote_copy.txt",
         "folder2/x",
         "folder2/y",
         "folder2/y/z",
@@ -153,6 +166,15 @@ class MultiFileCalcjob(engine.CalcJob):
         calcinfo = common.CalcInfo()
         calcinfo.codes_info = [codeinfo]
         calcinfo.retrieve_list = [("folder1/*/*.txt", ".", 99), ("folder2", ".", 99)]
+        comp: orm.Computer = self.inputs.code.computer
+        calcinfo.remote_copy_list = [
+            (
+                comp.uuid,
+                f"{comp.get_workdir()}/remote_copy.txt",
+                "folder2/remote_copy.txt",
+            )
+        ]
+        # TODO also add remote_symlink_list
 
         return calcinfo
 
