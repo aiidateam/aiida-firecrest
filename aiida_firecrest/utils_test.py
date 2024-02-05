@@ -1,4 +1,5 @@
 """Utilities mainly for testing."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -241,9 +242,10 @@ class FirecrestMockServer:
                     stderr=subprocess.STDOUT,
                 )
         else:
-            with open(script_path.parent / out_file, "w") as out, open(
-                script_path.parent / error_file, "w"
-            ) as err:
+            with (
+                open(script_path.parent / out_file, "w") as out,
+                open(script_path.parent / error_file, "w") as err,
+            ):
                 subprocess.run(
                     [str(script_path)], cwd=script_path.parent, stdout=out, stderr=err
                 )
