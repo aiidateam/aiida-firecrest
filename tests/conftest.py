@@ -2,6 +2,7 @@
 
 This sets up the Firecrest server to use, and telemetry for API requests.
 """
+
 from __future__ import annotations
 
 from functools import partial

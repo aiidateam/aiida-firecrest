@@ -4,6 +4,7 @@ Note this is independent of AiiDA,
 in fact it is awaiting possible inclusion in pyfirecrest:
 https://github.com/eth-cscs/pyfirecrest/pull/43
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator

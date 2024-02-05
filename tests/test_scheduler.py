@@ -1,4 +1,5 @@
 """Tests isolating only the Scheduler."""
+
 from aiida.schedulers import SchedulerError
 from aiida.schedulers.datastructures import CodeRunMode, JobTemplate
 import pytest
