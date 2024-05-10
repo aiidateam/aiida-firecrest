@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import os
 from pathlib import Path
 import platform
 import posixpath
 import shutil
+import tarfile
 import time
 from typing import Any, Callable, ClassVar, TypedDict
 from urllib import request
+import uuid
 
 from aiida.cmdline.params.options.overridable import OverridableOption
 from aiida.transports import Transport
@@ -18,8 +21,7 @@ from aiida.transports.util import FileAttribute
 from click.types import ParamType
 from firecrest import ClientCredentialsAuth, Firecrest  # type: ignore[attr-defined]
 
-from .remote_path import FcPath, convert_header_exceptions  # type: ignore[attr-defined]
-
+from firecrest.path import FcPath
 
 class ValidAuthOption(TypedDict, total=False):
     option: OverridableOption | None  # existing option
@@ -31,6 +33,9 @@ class ValidAuthOption(TypedDict, total=False):
     help: str
     callback: Callable[..., Any]  # for validation
 
+class BuggyError(Exception):
+    # TODO: Remove this class when the code is stable
+    """Raised when something should absolutly not happen, but it does."""
 
 class FirecrestTransport(Transport):
     """Transport interface for FirecREST."""
@@ -43,9 +48,131 @@ class FirecrestTransport(Transport):
     #   but this would ideally require some "global" rate limiter,
     #   across all transport instances
     # TODO upstream issue
-    # TODO also open an issue that the `verdi computer test won't work with a REST-API`
     _common_auth_options: ClassVar[list[Any]] = []  # type: ignore[misc]
     _DEFAULT_SAFE_OPEN_INTERVAL = 0.0
+
+    def _create_secret_file(ctx, param, value) -> str:
+        """Create a secret file if the value is not a path to a secret file.
+            The path should be absolute, if it is not, the file will be created in ~/.firecrest.
+        """
+        import uuid
+        from aiida.cmdline.utils import echo
+        from click import BadParameter
+        possible_path = Path(value)
+        if os.path.isabs(possible_path):
+            if not possible_path.exists():
+                raise BadParameter(f'Secret file not found at {value}')   
+            secret_path = possible_path
+        
+        else:
+            Path(f'~/.firecrest').expanduser().mkdir(parents=True, exist_ok=True)
+            _ = uuid.uuid4()
+            secret_path = Path(f'~/.firecrest/secret_{_}').expanduser()
+            while secret_path.exists(): 
+                # instead of a random number one could use the label or pk of the computer being configured
+                secret_path = Path(f'~/.firecrest/secret_{_}').expanduser()
+            secret_path.write_text(value)
+            echo.echo_report(f"Secret file created at {secret_path}")
+            print(f"Client Secret stored at {secret_path}")
+        
+        return str(secret_path)
+
+
+    def _validate_temp_directory(ctx, param, value) -> str:
+        """Validate the temp directory on the server. 
+        If it does not exist, create it.
+        If it is not empty, get a confimation from the user to empty it.
+        """
+
+        import click
+        firecrest_url= ctx.params['url']
+        token_uri= ctx.params['token_uri']
+        client_id= ctx.params['client_id']
+        client_machine= ctx.params['client_machine']
+        secret= ctx.params['client_secret']#)#.read_text()
+        small_file_size_mb= ctx.params['small_file_size_mb']
+
+        dummy = FirecrestTransport(
+        url=firecrest_url,
+        token_uri=token_uri,
+        client_id = client_id,
+        client_secret= secret,
+        client_machine= client_machine,
+        temp_directory= value,
+        small_file_size_mb = small_file_size_mb)
+
+        # Temp directory rutine
+        if dummy._cwd.joinpath(dummy._temp_directory).is_file(): #self._temp_directory.is_file(): 
+            raise click.BadParameter("Temp directory cannot be a file")
+
+        if dummy.path_exists(dummy._temp_directory):
+            if dummy.listdir(dummy._temp_directory):
+                # if not configured:
+                confirm = click.confirm(f"Temp directory {dummy._temp_directory} is not empty. Do you want to flush it?")
+                if confirm:
+                    for item in dummy.listdir(dummy._temp_directory):
+                        # TODO: maybe do recursive delete
+                        dummy.remove(dummy._temp_directory.joinpath(item))
+                else:
+                    click.echo(f"Please provide an empty temp directory on the server.")
+                    raise click.BadParameter(f"Temp directory {dummy._temp_directory} is not empty")
+                # The block below could be moved to a maintanace delete function, if needed
+                # else:
+                #     # There might still be some residual files in case of previous interupted connection
+                #     for item in dummy.listdir(dummy._temp_directory):
+                #             # this could be replace with a proper glob later
+                #             if item[:4] == 'temp':
+                #                 dummy.remove(dummy._temp_directory.joinpath(item))
+                    
+        else:
+            try:
+                dummy.mkdir(dummy._temp_directory, ignore_existing=True)
+            except Exception as e:
+                raise OSError(f"Could not create temp directory {dummy._temp_directory} on server: {e}")
+                
+        return value
+
+
+    def _dynamic_info_direct_size(ctx, param, value) -> str:
+        """Get dynamic information from the server, if the user enters 0 for the small_file_size_mb.
+        This is done by connecting to the server and getting the value of UTILITIES_MAX_FILE_SIZE.
+        Below this size, file bytes will be sent in a single API call. Above this size, 
+        the file will be downloaded(uploaded) from(to) the object store and downloaded in chunks.
+
+        :param ctx: the `click.Context`
+        :param param: the parameter
+        :param value: the value passed for the parameter
+
+        :return: the value of small_file_size_mb. 
+
+        """
+
+        if value > 0:
+            return value
+
+        firecrest_url= ctx.params['url']
+        token_uri= ctx.params['token_uri']
+        client_id= ctx.params['client_id']
+        client_machine= ctx.params['client_machine']
+        secret= ctx.params['client_secret']#)#.read_text()
+
+        dummy = FirecrestTransport(
+        url=firecrest_url,
+        token_uri=token_uri,
+        client_id = client_id,
+        client_secret= secret,
+        client_machine= client_machine,
+        temp_directory= '',
+        small_file_size_mb = 0.0)
+
+        prameters= dummy._client.parameters()
+        utilities_max_file_size = next((item for item in prameters['utilities'] if item['name'] == 'UTILITIES_MAX_FILE_SIZE'), None)
+        if utilities_max_file_size is not None:
+            small_file_size_mb = float(utilities_max_file_size['value'])
+        else:
+            small_file_size_mb = 5.0 # default value
+        return small_file_size_mb
+
 
     _valid_auth_options: ClassVar[list[tuple[str, ValidAuthOption]]] = [  # type: ignore[misc]
         (
@@ -81,19 +208,10 @@ class FirecrestTransport(Transport):
                 "type": str,
                 "non_interactive_default": False,
                 "prompt": "Client Secret",
-                "help": "FirecREST client secret",
+                "help": "FirecREST client secret or Absolute path to an existing FirecREST Secret Key",
+                "callback": _create_secret_file,
             },
         ),
-        # (
-        #     # TODO: format of secret file, and lookup secret by default in ~/.firecrest/secrets.json
-        #     "secret_path",
-        #     {
-        #         "type": AbsolutePathOrEmptyParamType(dir_okay=False, exists=True),
-        #         "non_interactive_default": False,
-        #         "prompt": "Secret key file",
-        #         "help": "Absolute path to file containing FirecREST client secret",
-        #     },
-        # ),
         (
             "client_machine",
             {
@@ -104,27 +222,24 @@ class FirecrestTransport(Transport):
             },
         ),
         (
-            # TODO you could potentially get this dynamically from server
-            # (via /status/parameters)
             "small_file_size_mb",
             {
                 "type": float,
-                "default": 5.0,  # limit set on the server is usually this
+                "default": 0,
                 "non_interactive_default": True,
-                "prompt": "Maximum file size for direct transfer (MB)",
+                "prompt": "Maximum file size for direct transfer (MB) [Enter 0 to get this info from server]",
                 "help": "Below this size, file bytes will be sent in a single API call.",
-                "callback": validate_positive_number,
+                "callback": _dynamic_info_direct_size,
             },
         ),
         (
-            "file_transfer_poll_interval",
+            "temp_directory",
             {
-                "type": float,
-                "default": 0.1,  # TODO what default to choose?
-                "non_interactive_default": True,
-                "prompt": "File transfer poll interval (s)",
-                "help": "Poll interval when waiting for large file transfers.",
-                "callback": validate_positive_number,
+                "type": str,
+                "non_interactive_default": False,
+                "prompt": "Please enter a temp directory on server",
+                "help": "A temp directory on server for creating temporary files (compression, extraction, etc.)",
+                "callback": _validate_temp_directory,
             },
         ),
     ]
@@ -135,16 +250,32 @@ class FirecrestTransport(Transport):
         url: str,
         token_uri: str,
         client_id: str,
-        client_secret: str | Path,
+        client_secret: str, #| Path,
+        # unfortunately we cannot store client_secret as a Path, because it is not JSON serializable
         client_machine: str,
-        small_file_size_mb: float = 5.0,
-        file_transfer_poll_interval: float = 0.1,
+        small_file_size_mb: float,
+        temp_directory: str,
+        # configured: bool = True,
         # note, machine is provided by default,
         # for the hostname, but we don't use that
         # TODO ideally hostname would not be necessary on a computer
         **kwargs: Any,
     ):
-        """Construct a FirecREST transport."""
+        """Construct a FirecREST transport object. 
+
+        :param url: URL to the FirecREST server
+        :param token_uri: URI for retrieving FirecREST authentication tokens
+        :param client_id: FirecREST client ID
+        :param client_secret: FirecREST client secret or Absolute path to an existing FirecREST Secret Key
+        :param client_machine: FirecREST machine secret
+        :param small_file_size_mb: Maximum file size for direct transfer (MB)
+        :param temp_directory: A temp directory on server for creating temporary files (compression, extraction, etc.)
+        :param kwargs: Additional keyword arguments
+        """
+        
+
+        print("this is being done with firecrest transport")
+
         # there is no overhead for "opening" a connection to a REST-API,
         # but still allow the user to set a safe interval if they really want to
         kwargs.setdefault("safe_interval", 0)
@@ -153,40 +284,35 @@ class FirecrestTransport(Transport):
         assert isinstance(url, str), "url must be a string"
         assert isinstance(token_uri, str), "token_uri must be a string"
         assert isinstance(client_id, str), "client_id must be a string"
-        assert isinstance(
-            client_secret, (str, Path)
-        ), "client_secret must be a string or Path"
-
+        assert isinstance(client_secret, str), "client_secret must be a string"
         assert isinstance(client_machine, str), "client_machine must be a string"
-        assert isinstance(
-            small_file_size_mb, float
-        ), "small_file_size_mb must be a float"
-        assert isinstance(
-            file_transfer_poll_interval, float
-        ), "file_transfer_poll_interval must be a float"
+        assert isinstance(temp_directory, str), "temp_directory must be a string"
+        assert isinstance(small_file_size_mb, float), "small_file_size_mb must be a float"
 
+        
         self._machine = client_machine
         self._url = url
         self._token_uri = token_uri
         self._client_id = client_id
+        self._temp_directory =  Path(temp_directory)
         self._small_file_size_bytes = int(small_file_size_mb * 1024 * 1024)
-        self._file_transfer_poll_interval = file_transfer_poll_interval
+        secret = Path(client_secret).read_text()
 
-        secret = (
-            client_secret.read_text()
-            if isinstance(client_secret, Path)
-            else client_secret
-        )
+        try:
+            self._client = Firecrest(
+                firecrest_url=self._url,
+                authorization=ClientCredentialsAuth(client_id, secret, token_uri),
+            )
+        except Exception as e:
+            raise ValueError(f"Could not connect to FirecREST server: {e}")
+        
+        self._cwd: FcPath = FcPath(self._client, self._machine, "/", cache_enabled=True)
+        
+    
+    def __str__(self):
+        """Return the name of the plugin."""
+        return self.__class__.__name__
 
-        self._client = Firecrest(
-            firecrest_url=self._url,
-            authorization=ClientCredentialsAuth(client_id, secret, token_uri),
-        )
-
-        self._cwd: FcPath = FcPath(self._client, self._machine, "/")
-
-    # TODO if this is missing is causes plugin info to fail on verdi
-    is_process_function = False
 
     @classmethod
     def get_description(cls) -> str:
@@ -200,36 +326,46 @@ class FirecrestTransport(Transport):
         )
 
     def open(self) -> None:  # noqa: A003
+        """Open the transport. 
+        This is a no-op for the REST-API, as there is no connection to open.
+        """
         pass
 
     def close(self) -> None:
+        """Close the transport.
+        This is a no-op for the REST-API, as there is no connection to close.
+        """
         pass
 
     def getcwd(self) -> str:
+        """Return the current working directory."""
         return str(self._cwd)
 
     def _get_path(self, *path: str) -> str:
+        """Return the path as a string."""
         return posixpath.normpath(self._cwd.joinpath(*path))
 
     def chdir(self, path: str) -> None:
+        """Change the current working directory."""
         new_path = self._cwd.joinpath(path)
         if not new_path.is_dir():
             raise OSError(f"'{new_path}' is not a valid directory")
         self._cwd = new_path
 
-    def normalize(self, path: str = ".") -> str:
-        return posixpath.normpath(path)
-
     def chmod(self, path: str, mode: str) -> None:
+        """Change the mode of a file."""
         self._cwd.joinpath(path).chmod(mode)
 
     def chown(self, path: str, uid: str, gid: str) -> None:
+        """Change the owner of a file."""
         self._cwd.joinpath(path).chown(uid, gid)
 
     def path_exists(self, path: str) -> bool:
+        """Check if a path exists on the remote."""
         return self._cwd.joinpath(path).exists()
 
     def get_attribute(self, path: str) -> FileAttribute:
+        """Get the attributes of a file."""
         result = self._cwd.joinpath(path).stat()
         return FileAttribute(  # type: ignore
             {
@@ -243,13 +379,24 @@ class FirecrestTransport(Transport):
         )
 
     def isdir(self, path: str) -> bool:
+        """Check if a path is a directory."""
         return self._cwd.joinpath(path).is_dir()
 
     def isfile(self, path: str) -> bool:
+        """Check if a path is a file."""
         return self._cwd.joinpath(path).is_file()
 
-    def listdir(self, path: str = ".", pattern: str | None = None) -> list[str]:
-        names = [p.name for p in self._cwd.joinpath(path).iterdir()]
+    def listdir(self, path: str = ".", pattern: str | None = None, recursive: bool = False) -> list[str]:
+        """List the contents of a directory.
+        
+        :param pattern: Unix shell-style wildcards to match the pattern:
+            - `*` matches everything
+            - `?` matches any single character
+            - `[seq]` matches any character in seq
+            - `[!seq]` matches any character not in seq
+        :param recursive: If True, list directories recursively
+        """
+        names = [p.relpath(path).as_posix() for p in self._cwd.joinpath(path).iterdir(recursive=recursive)]
         if pattern is not None:
             names = fnmatch.filter(names, pattern)
         return names
@@ -257,6 +404,18 @@ class FirecrestTransport(Transport):
     # TODO the default implementations of glob / iglob could be overriden
     # to be more performant, using cached FcPaths and https://github.com/chrisjsewell/virtual-glob
 
+    def makedirs(self, path: str, ignore_existing: bool = False) -> None:
+        """Make directories on the remote."""
+        self._cwd.joinpath(path).mkdir(parents=True, exist_ok=ignore_existing)
+
+    def mkdir(self, path: str, ignore_existing: bool = False) -> None:
+        """Make a directory on the remote."""
+        self._cwd.joinpath(path).mkdir(exist_ok=ignore_existing)
+
+    def normalize(self, path: str = ".") -> str:
+        """Resolve the path."""
+        return posixpath.normpath(path)
+    
     def write_binary(self, path: str, data: bytes) -> None:
         """Write bytes to a file on the remote."""
         # Note this is not part of the Transport interface, but is useful for testing
@@ -270,6 +429,7 @@ class FirecrestTransport(Transport):
         return self._cwd.joinpath(path).read_bytes()
 
     def symlink(self, remotesource: str, remotedestination: str) -> None:
+        """Create a symlink on the remote."""
         source = self._cwd.joinpath(remotesource)
         destination = self._cwd.joinpath(remotedestination)
         destination.symlink_to(source)
@@ -277,36 +437,52 @@ class FirecrestTransport(Transport):
     def copyfile(
         self, remotesource: str, remotedestination: str, dereference: bool = False
     ) -> None:
-        source = self._cwd.joinpath(remotesource).enable_cache()
-        destination = self._cwd.joinpath(remotedestination).enable_cache()
+        """Copy a file on the remote. FirecREST does not support symlink copying.
 
+        :param dereference: If True, copy the target of the symlink instead of the symlink itself.
+        Warning! even if deference is set to False, I'm not sure if the symlink will be functional after the copy.
+        """
+        source = self._cwd.joinpath(remotesource)#.enable_cache() it's removed from from path.py to be investigated
+        destination = self._cwd.joinpath(remotedestination)#.enable_cache() it's removed from from path.py to be investigated
+        if dereference:
+            raise NotImplementedError("copyfile() does not support symlink dereference")
         if not source.exists():
             raise FileNotFoundError(f"Source file does not exist: {source}")
         if not source.is_file():
             raise FileNotFoundError(f"Source is not a file: {source}")
 
-        if not dereference and source.is_symlink():
-            destination.symlink_to(source)
-        else:
-            source.copy_to(destination)
+        source.copy_to(destination)
+        # I removed symlink copy, becasue it's really not a file copy, it's a link copy
+        # and aiida-ssh have it in buggy manner, prrobably it's not used anyways
+
 
     def copytree(
         self, remotesource: str, remotedestination: str, dereference: bool = False
     ) -> None:
-        source = self._cwd.joinpath(remotesource).enable_cache().enable_cache()
-        destination = (
-            self._cwd.joinpath(remotedestination).enable_cache().enable_cache()
-        )
+        """Copy a directory on the remote. FirecREST does not support symlink copying.
+        
+        :param dereference: If True, copy the target of the symlink instead of the symlink itself.
+        Warning! even if deference is set to False, I'm not sure if the symlink will be functional after the copy.
+        """
 
+        source = self._cwd.joinpath(remotesource)#.enable_cache().enable_cache() it's removed from from path.py to be investigated
+        destination = (
+            self._cwd.joinpath(remotedestination)#.enable_cache().enable_cache() it's removed from from path.py to be investigated
+        )
+        if dereference:
+            raise NotImplementedError("Dereferencing not implemented in FirecREST server")
         if not source.exists():
             raise FileNotFoundError(f"Source file does not exist: {source}")
         if not source.is_dir():
             raise FileNotFoundError(f"Source is not a directory: {source}")
 
-        if not dereference and source.is_symlink():
-            destination.symlink_to(source)
-        else:
-            source.copy_to(destination)
+        source.copy_to(destination)
+        # TODO: the block belowe does not work for nested symlinks, if we really need that, 
+        # we have to asked them to make this option for us in FirecREST.
+        # if not dereference and source.is_symlink():
+        #     destination.symlink_to(source)
+        # else:
+        #     source.copy_to(destination)
 
     def copy(
         self,
@@ -315,45 +491,67 @@ class FirecrestTransport(Transport):
         dereference: bool = False,
         recursive: bool = True,
     ) -> None:
+        """Copy a file or directory on the remote. FirecREST does not support symlink copying.
+
+        :param recursive: If True, copy directories recursively.
+        note that the non-recursive option is not implemented in FirecREST server
+        
+        :param dereference: If True, copy the target of the symlink instead of the symlink itself.
+        Warning! even if deference is set to False, I'm not sure if the symlink will be functional after the copy.
+        """
+
         if not recursive:
             # TODO this appears to not actually be used upstream, so just remove there
             raise NotImplementedError("Non-recursive copy not implemented")
-        source = self._cwd.joinpath(remotesource).enable_cache()
-        destination = self._cwd.joinpath(remotedestination).enable_cache()
+        if dereference:
+            raise NotImplementedError("Dereferencing not implemented in FirecREST server")
+        source = self._cwd.joinpath(remotesource)#.enable_cache() it's removed from from path.py to be investigated
+        destination = self._cwd.joinpath(remotedestination)#.enable_cache() it's removed from from path.py to be investigated
 
         if not source.exists():
             raise FileNotFoundError(f"Source file does not exist: {source}")
 
-        if not dereference and source.is_symlink():
-            destination.symlink_to(source)
-        else:
-            source.copy_to(destination)
+        source.copy_to(destination)
+        # TODO: the block belowe does not work for nested symlinks, if we really need that,
+        # we have to asked them to make this option for us
+        # if not dereference and source.is_symlink():
+        #     destination.symlink_to(source)
+        # else:
+        #     source.copy_to(destination)
 
-    def makedirs(self, path: str, ignore_existing: bool = False) -> None:
-        self._cwd.joinpath(path).mkdir(parents=True, exist_ok=ignore_existing)
-
-    def mkdir(self, path: str, ignore_existing: bool = False) -> None:
-        self._cwd.joinpath(path).mkdir(exist_ok=ignore_existing)
 
     # TODO check symlink handling for get methods
+    # symlink handeling is done.
     # TODO do get/put methods need to handle glob patterns?
+    # Apparently not, but I'm not clear how glob() iglob() are going to behave here. We may need to implement them.
 
     def getfile(
-        self, remotepath: str | FcPath, localpath: str | Path, *args: Any, **kwargs: Any
+        self, remotepath: str | FcPath, localpath: str | Path, dereference:bool = True, *args: Any, **kwargs: Any
     ) -> None:
+        """Get a file from the remote.
+
+        :param dereference: If True, follow symlinks.
+            note: we don't support downloading symlinks, so dereference is always should be True
+        
+        """
+
+        if not dereference:
+            raise NotImplementedError("Getting symlinks with `dereference=False` is not supported")
+
         local = Path(localpath)
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
         remote = (
             remotepath
             if isinstance(remotepath, FcPath)
-            else self._cwd.joinpath(remotepath).enable_cache()
+            else self._cwd.joinpath(remotepath)#.enable_cache() it's removed from from path.py to be investigated
         )
         if not remote.is_file():
             raise FileNotFoundError(f"Source file does not exist: {remote}")
         remote_size = remote.lstat().st_size
-
-        with convert_header_exceptions({"machine": self._machine, "path": remote}):
+        # if not local.exists():
+        #     local.mkdir(parents=True)
+        with self._cwd.convert_header_exceptions({"machine": self._machine, "path": remote}):
             if remote_size < self._small_file_size_bytes:
                 self._client.simple_download(self._machine, str(remote), localpath)
             else:
@@ -363,78 +561,209 @@ class FirecrestTransport(Transport):
                 # to concurrently initiate internal file transfers to the object store (a.k.a. "staging area")
                 # and downloading from the object store to the local machine
 
-                # this initiates the internal transfer of the file to the "staging area"
+                # I investigated asyncio, but it's not performant for this use case. 
+                # Becasue in the end, FirecREST server ends up serializing the requests. 
+                # see here: https://github.com/eth-cscs/pyfirecrest/issues/94
                 down_obj = self._client.external_download(self._machine, str(remote))
+                down_obj.finish_download(local) 
 
-                # this waits for the file to be moved to the staging area
-                # TODO handle the transfer stalling (timeout?) and optimise the polling interval
-                while down_obj.in_progress:
-                    time.sleep(self._file_transfer_poll_interval)
+        self._validate_checksum(local, remote)
 
-                # this downloads the file from the "staging area"
-                url = down_obj.object_storage_data
-                if (
-                    os.environ.get("FIRECREST_LOCAL_TESTING")
-                    and platform.system() == "Darwin"
-                ):
-                    # TODO when using the demo server on a Mac, the wrong IP is provided
-                    # and even then a 403 error is returned, due to a signature mismatch
-                    # note you can directly directly download the file from:
-                    # "/path/to/firecrest/deploy/demo/minio" + urlparse(url).path
-                    url = url.replace("192.168.220.19", "localhost")
-                with request.urlopen(url) as response, local.open("wb") as handle:
-                    shutil.copyfileobj(response, handle)
 
-        # TODO use cwd.checksum to confirm download is not corrupted?
+    def _validate_checksum(self,localpath: str | Path, remotepath: str | FcPath) -> None:
+        """Validate the checksum of a file.
+        Useful for checking if a file was transferred correctly.
+        it uses sha256 hash to compare the checksum of the local and remote files.
+
+        Raises: ValueError: If the checksums do not match.
+        """
+
+        local = Path(localpath)
+        if not local.is_absolute():
+            raise ValueError("Destination must be an absolute path")
+        remote = (
+            remotepath
+            if isinstance(remotepath, FcPath)
+            else self._cwd.joinpath(remotepath)#.enable_cache() it's removed from from path.py to be investigated
+        )
+        if not remote.is_file():
+            raise FileNotFoundError(f"Cannot calculate checksum for a directory: {remote}")
+        
+        sha256_hash = hashlib.sha256()
+        with open(local,"rb") as f:
+            for byte_block in iter(lambda: f.read(4096),b""):
+                sha256_hash.update(byte_block)
+        local_hash = sha256_hash.hexdigest()
+
+        remote_hash = self._client.checksum(self._machine, remote)
+
+        try:
+            assert local_hash == remote_hash
+        except AssertionError:
+            raise ValueError(f"Checksum mismatch between local and remote files: {local} and {remote}")
+
+
+    def _gettreetar(
+        self, remotepath: str | FcPath, localpath: str | Path, dereference: bool =False, *args: Any, **kwargs: Any
+    ) -> None:
+        """Get a directory from the remote as a tar file and extract it locally.
+        This is useful for downloading a directory with many files, as it is more efficient than downloading each file individually.
+        Note that this method is not part of the Transport interface, and is not meant to be used publicly.
+
+        :param dereference: If True, follow symlinks.
+            note: FirecREST doesn't support `--dereference` for tar call, so dereference should always be False, for now.
+        """
+        # TODO manual testing the submit behaviour
+
+        if dereference:
+            raise NotImplementedError("Dereferencing compression not implemented in pyFirecREST.")
+
+        _ = uuid.uuid4()        # Attempt direct compress
+        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
+        try:
+            self._client.compress(self._machine, str(remotepath), remote_path_temp)
+        except Exception as e:
+            # TODO: pyfirecrest is providing a solution to this, but it's not yet merged. 
+            # once done submit_compress_job should be done automaticaly by compress
+            # see: https://github.com/eth-cscs/pyfirecrest/pull/109
+            raise NotImplementedError("Not implemeted for now")
+            comp_obj = self._client.submit_compress_job(self._machine, str(remotepath), remote_path_temp)
+            while comp_obj.in_progress:
+                time.sleep(self._file_transfer_poll_interval)
+        
+        # Download 
+        localpath_temp = localpath.joinpath(f"temp_{_}.tar")
+        try:
+            self.getfile(remote_path_temp, localpath_temp)
+        finally:
+            self.remove(remote_path_temp)
+
+        # Extract the downloaded file locally
+        # this is a bit hard coded, what I wanted to do: to extract the files in the same directory as the tar file
+        try:
+            with tarfile.open(localpath_temp, "r") as tar:
+                members = [m for m in tar.getmembers() if m.name.startswith(remotepath.name)]
+                for member in members:
+                    member.name = os.path.relpath(member.name, remotepath.name)
+                    tar.extract(member, path=localpath)
+        finally:
+            localpath_temp.unlink()
+                
 
     def gettree(
-        self, remotepath: str | FcPath, localpath: str | Path, *args: Any, **kwargs: Any
+        self, remotepath: str | FcPath, localpath: str | Path, dereference: bool =True, *args: Any, **kwargs: Any
     ) -> None:
+        """Get a directory from the remote.
+        
+        :param dereference: If True, follow symlinks.
+            note: dereference should be always True, otherwise the symlinks will not be functional.
+        """
         local = Path(localpath)
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
         if local.is_file():
             raise OSError("Cannot copy a directory into a file")
-        local.mkdir(parents=True, exist_ok=True)
 
         remote = (
             remotepath
             if isinstance(remotepath, FcPath)
-            else self._cwd.joinpath(remotepath).enable_cache()
+            else self._cwd.joinpath(remotepath)#.enable_cache() it's removed from from path.py to be investigated
         )
+        local = Path(localpath)
+
         if not remote.is_dir():
             raise OSError(f"Source is not a directory: {remote}")
-        for remote_item in remote.iterdir():
-            local_item = local.joinpath(remote_item.name)
-            if remote_item.is_dir():
-                self.gettree(remote_item, local_item)
-            else:
-                self.getfile(remote_item, local_item)
+        
+         # this block is added only to mimick the behavior that aiida expects
+        if local.exists():
+            # Destination directory already exists, create remote directory name inside it
+            local = local.joinpath(remote.name)
+            local.mkdir(parents=True, exist_ok=True)
+        else:
+            # Destination directory does not exist, create and move content 69 inside it
+            local.mkdir(parents=True, exist_ok=False)
+        # SSH transport behaviour, 69 is a directory
+            # transport.get('somepath/69', 'someremotepath/') == transport.put('somepath/69', 'someremotepath') 
+            # transport.get('somepath/69', 'someremotepath/') == transport.put('somepath/69/', 'someremotepath/')
+            # transport.get('someremotepath/69', 'somepath/69')  -->  if 69 exist,     create 69 inside it ('somepath/69/69')
+            # transport.get('someremotepath/69', 'somepath/69')  -->  if 69 no texist, create 69 inside it ('somepath/69')
+            # transport.get('somepath/69', 'someremotepath/6889/69')  -->  create everything, make_parent = True
+        
+        if not dereference and self.payoff(remote):
+            # in this case send a request to the server to tar the files and then download the tar file
+            # unfortunately, the server does not provide a deferenced tar option, yet. 
+            self._gettreetar(remote, local)
+        else:
+            # otherwise download the files one by one
+            for remote_item in remote.iterdir(recursive=True):
+                local_item = local.joinpath(remote_item.relpath(remote))
 
-    def get(self, remotepath: str, localpath: str, *args: Any, **kwargs: Any) -> None:
-        remote = self._cwd.joinpath(remotepath).enable_cache()
+                if dereference and remote_item.is_symlink():
+                    target_path = remote_item._cache.link_target
+                    if not Path(target_path).is_absolute():
+                        target_path = remote_item.parent.joinpath(target_path).resolve()
+                    
+                    target_path = self._cwd.joinpath(target_path)
+                    if target_path.is_dir():
+                        self.gettree(target_path, local_item, dereference=True)
+                else:
+                    target_path = remote_item
+
+                if not target_path.is_dir():
+                    self.getfile(target_path, local_item)
+                else:
+                    local_item.mkdir(parents=True, exist_ok=True)
+                
+
+
+    def get(self, remotepath: str, localpath: str, ignore_nonexisting: bool = False, dereference: bool =True, *args: Any, **kwargs: Any) -> None:
+        """Get a file or directory from the remote.
+        
+        :param ignore_nonexisting: If True, do not raise an error if the source file does not exist.
+        :param dereference: If True, follow symlinks.
+            note: dereference should be always True, otherwise the symlinks will not be functional.
+        """
+        remote = self._cwd.joinpath(remotepath)#.enable_cache() it's removed from from path.py to be investigated
+        
         if remote.is_dir():
             self.gettree(remote, localpath)
         elif remote.is_file():
             self.getfile(remote, localpath)
-        else:
+        elif not ignore_nonexisting:
             raise FileNotFoundError(f"Source file does not exist: {remote}")
 
+
     def putfile(
-        self, localpath: str, remotepath: str, *args: Any, **kwargs: Any
+        self, localpath: str, remotepath: str, dereference:bool = True, *args: Any, **kwargs: Any , 
     ) -> None:
-        if not Path(localpath).is_absolute():
+        """Put a file from the remote.
+
+        :param dereference: If True, follow symlinks.
+            note: we don't support uploading symlinks, so dereference is always should be True
+        
+        """
+        
+        if not dereference:
+            raise NotImplementedError("Getting symlinks with `dereference=False` is not supported")
+
+
+        localpath = Path(localpath)
+        if not localpath.is_absolute():
             raise ValueError("The localpath must be an absolute path")
-        if not Path(localpath).is_file():
+        if not localpath.is_file():
             raise ValueError(f"Input localpath is not a file: {localpath}")
-        local_size = Path(localpath).stat().st_size
-        remote = self._cwd.joinpath(remotepath).enable_cache()
+        remote = self._cwd.joinpath(remotepath)#.enable_cache() it's removed from from path.py to be investigated
+        
+
+        if remote.is_dir():
+            raise ValueError(f"Destination is a directory: {remote}")
+
+        local_size = localpath.stat().st_size
         # note this allows overwriting of existing files
-        with convert_header_exceptions({"machine": self._machine, "path": remote}):
+        with self._cwd.convert_header_exceptions({"machine": self._machine, "path": remote}):
             if local_size < self._small_file_size_bytes:
                 self._client.simple_upload(
-                    self._machine, localpath, str(remote.parent), remote.name
-                )
+                    self._machine, str(localpath), str(remote.parent), remote.name)
             else:
                 # TODO the following is a very basic implementation of uploading a large file
                 # ideally though, if uploading multiple large files (i.e. in puttree),
@@ -442,108 +771,212 @@ class FirecrestTransport(Transport):
                 # to concurrently upload to the object store (a.k.a. "staging area"),
                 # then wait for all files to finish being transferred to the target location
 
-                # this simply retrieves a location to upload on the "staging area"
-                up_obj = self._client.external_upload(
-                    self._machine, localpath, str(remote)
-                )
-                if (
-                    os.environ.get("FIRECREST_LOCAL_TESTING")
-                    and platform.system() == "Darwin"
-                ):
-                    # TODO when using the demo server on a Mac, the wrong IP is provided
-                    up_obj.object_storage_data["command"] = up_obj.object_storage_data[
-                        "command"
-                    ].replace("192.168.220.19", "localhost")
-
-                # this uploads the file to the "staging area"
-                # TODO this calls curl in a subcommand, but you could also use the python requests library
-                # see: https://github.com/chrisjsewell/fireflow/blob/d45d41a0aced6502b7946c5557712a3c3cb1bebb/src/fireflow/process.py#L177
+                # I investigated asyncio, but it's not performant for this use case. 
+                # Becasue in the end, FirecREST server ends up serializing the requests. 
+                # see here: https://github.com/eth-cscs/pyfirecrest/issues/94
+                up_obj = self._client.external_upload(self._machine, str(localpath), str(remote))
                 up_obj.finish_upload()
-                # this waits for the file in the staging area to be moved to the final location
-                # TODO handle the transfer stalling (timeout?) and optimise the polling interval
-                while up_obj.in_progress:
-                    time.sleep(self._file_transfer_poll_interval)
 
-        # TODO use cwd.checksum to confirm upload is not corrupted?
+        self._validate_checksum(localpath, str(remote))
+
+    def payoff(
+            self, remotepath: str 
+    ) -> bool:
+        """
+        This function will be used to determine whether to tar the files before downloading
+        """
+        # After discussing with the pyfirecrest team, it seems that server has some sort 
+        # of serialization and "penalty" for sending multiple requests asycnhronusly or in a short time window. 
+        # It responses in 1, 1.5, 3, 5, 7 seconds!
+        # So right now, I think if the number of files is more than 3, it pays off to tar everything
+        if len(self.listdir(remotepath,recursive=True)) > 3:
+            return True
+        else:
+            return False
+
+    def _puttreetar(
+        self, localpath: str | Path, remotepath: str | FcPath, dereference: bool=True, *args: Any, **kwargs: Any
+    ) -> None:
+        """Put a directory to the remote by sending as tar file in backend. 
+        This is useful for uploading a directory with many files, as it is more efficient than uploading each file individually.
+        Note that this method is not part of the Transport interface, and is not meant to be used publicly.
+
+        :param dereference: If True, follow symlinks. If False, symlinks are ignored from sending over.
+        """
+        # this function will be used to send a folder as a tar file to the server and extract it on the server
+
+
+        import tarfile
+        import uuid
+        _ = uuid.uuid4()
+
+        localpath = Path(localpath)
+        tarpath = localpath.parent.joinpath(f"temp_{_}.tar")
+        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
+        with tarfile.open(tarpath, "w", dereference=dereference) as tar:
+            if dereference:
+                for root, dirs, files in os.walk(localpath):
+                    for file in files:
+                        full_path = os.path.join(root, file)
+                        relative_path = os.path.relpath(full_path, localpath)
+                        tar.add(full_path, arcname=relative_path)
+            else:
+                # iterdir() ignores symbolic links
+                for item in localpath.iterdir(): 
+                    tar.add(item, arcname=item.name)
+
+        # Upload
+        try:
+            self.putfile(tarpath, remote_path_temp)
+        finally:
+            tarpath.unlink()
+        # Attempt direct extract
+        try:
+            self._client.extract(self._machine, remote_path_temp, str(remotepath))
+        except Exception as e:
+            # TODO: pyfirecrest is providing a solution to this, but it's not yet merged
+            # once done submit_compress_job should be done automaticaly by compress
+            # see: https://github.com/eth-cscs/pyfirecrest/pull/109
+            raise NotImplementedError("Not implemeted for now")
+            comp_obj = self._client.submit_extract_job(self._machine, remotepath.joinpath(f"_{_}.tar"), str(remotepath))
+            while comp_obj.in_progress:
+                time.sleep(self._file_transfer_poll_interval)
+        finally:
+            self.remove(remote_path_temp)
+
 
     def puttree(
-        self, localpath: str | Path, remotepath: str, *args: Any, **kwargs: Any
+        self, localpath: str | Path, remotepath: str, dereference: bool=True,  *args: Any, **kwargs: Any
     ) -> None:
-        localpath = Path(localpath)
+        """Put a directory to the remote. 
+        
+        :param dereference: If True, follow symlinks. 
+            note: dereference should be always True, otherwise the symlinks will not be functional, therfore not supported.
+        """
+        if not dereference:
+            raise NotImplementedError
 
-        # local checks
+        localpath = Path(localpath)
+        remotepath = self._cwd.joinpath(remotepath)
+
         if not localpath.is_absolute():
             raise ValueError("The localpath must be an absolute path")
         if not localpath.exists():
             raise OSError("The localpath does not exists")
         if not localpath.is_dir():
-            raise ValueError(f"Input localpath is not a folder: {localpath}")
+            raise ValueError(f"Input localpath is not a directory: {localpath}")
 
-        for dirpath, _, filenames in os.walk(localpath):
-            # Get the relative path
-            rel_folder = os.path.relpath(path=dirpath, start=localpath)
+        # this block is added only to mimick the behavior that aiida expects
+        if remotepath.exists():
+            # Destination directory already exists, create local directory name inside it
+            remotepath = self._cwd.joinpath(remotepath, localpath.name)
+            self.mkdir(remotepath, ignore_existing=False)
+        else:
+            # Destination directory does not exist, create and move content 69 inside it
+            self.mkdir(remotepath, ignore_existing=False)
+        # SSH transport behaviour
+            # transport.put('somepath/69', 'someremotepath/') == transport.put('somepath/69', 'someremotepath') 
+            # transport.put('somepath/69', 'someremotepath/') != transport.put('somepath/69/', 'someremotepath/')
+            # transport.put('somepath/69', 'someremotepath/67')  -->  if 67 not exist, create and move content 69 inside it (someremotepath/67)
+            # transport.put('somepath/69', 'someremotepath/67')  -->  if 67 exist, create 69 inside it (someremotepath/67/69)
+            # transport.put('somepath/69', 'someremotepath/6889/69')  -->  useless Error: OSError
+            # Weired
+            # SSH bug:
+            # transport.put('somepath/69', 'someremotepath/') --> assuming someremotepath exists, make 69 
+            # while
+            # transport.put('somepath/69/', 'someremotepath/') --> assuming someremotepath exists, OSError: cannot make someremotepath
 
-            if not self.path_exists(os.path.join(remotepath, rel_folder)):
-                self.mkdir(os.path.join(remotepath, rel_folder))
 
-            for filename in filenames:
-                localfile_path = os.path.join(localpath, rel_folder, filename)
-                remotefile_path = os.path.join(remotepath, rel_folder, filename)
-                self.putfile(localfile_path, remotefile_path)
+        if self.payoff(remotepath):
+            # in this case send send everything as a tar file
+            self._puttreetar(localpath, remotepath)
+        else:
+            # otherwise send the files one by one
+            for dirpath, _, filenames in os.walk(localpath):
+                rel_folder = os.path.relpath(path=dirpath, start=localpath)
 
-    def put(self, localpath: str, remotepath: str, *args: Any, **kwargs: Any) -> None:
+                rm_parent_now = remotepath.joinpath(rel_folder)
+                self.mkdir(rm_parent_now, ignore_existing=True)
+
+                for filename in filenames:
+                    localfile_path = os.path.join(localpath, rel_folder, filename)
+                    remotefile_path = rm_parent_now.joinpath( filename)
+                    self.putfile(localfile_path, remotefile_path)
+
+
+    def put(self, localpath: str, remotepath: str, ignore_nonexisting: bool =False, dereference: bool=True, *args: Any, **kwargs: Any) -> None:
+        """Put a file or directory to the remote.
+
+        :param ignore_nonexisting: If True, do not raise an error if the source file does not exist.
+        :param dereference: If True, follow symlinks.
+            note: dereference should be always True, otherwise the symlinks will not be functional.        
+        """
         # TODO ssh does a lot more
-        if os.path.isdir(localpath):
+        # update to above TODO: I made a manual test with ssh. added some extra care in puttree and gettree and now it's working fine
+        
+        if not dereference:
+            raise NotImplementedError
+        
+        localpath = Path(localpath)
+        if not localpath.is_absolute():
+            raise ValueError("The localpath must be an absolute path")
+        if not Path(localpath).exists() and not ignore_nonexisting:
+            raise FileNotFoundError(f"Source file does not exist: {localpath}")
+        
+        if localpath.is_dir():
             self.puttree(localpath, remotepath)
-        elif os.path.isfile(localpath):
-            if self.isdir(remotepath):
-                remote = os.path.join(remotepath, os.path.split(localpath)[1])
-                self.putfile(localpath, remote)
-            else:
-                self.putfile(localpath, remotepath)
+        elif localpath.is_file():
+            self.putfile(localpath, remotepath)
+
 
     def remove(self, path: str) -> None:
+        """Remove a file or directory on the remote."""
         self._cwd.joinpath(path).unlink()
 
     def rename(self, oldpath: str, newpath: str) -> None:
+        """Rename a file or directory on the remote."""
         self._cwd.joinpath(oldpath).rename(self._cwd.joinpath(newpath))
 
     def rmdir(self, path: str) -> None:
-        # TODO check if empty
-        self._cwd.joinpath(path).rmtree()
+        """Remove a directory on the remote.
+        If the directory is not empty, an OSError is raised."""
+
+        if len(self.listdir(path)) == 0:
+            self._cwd.joinpath(path).rmtree()
+        else:
+            raise OSError(f"Directory not empty: {path}")
 
     def rmtree(self, path: str) -> None:
-        self._cwd.joinpath(path).rmtree()
+        """Remove a directory on the remote.
+        If the directory is not empty, it will be removed recursively, equivalent to `rm -rf`.
+        It does not raise an error if the directory does not exist.
+        """
+        try:
+            self._cwd.joinpath(path).rmtree()
+        # TODO: this try&except is to mimick the behaviour of `aiida-ssh`` transport, TODO: raise an issue on aiida
+        except FileNotFoundError:
+            pass
 
     def whoami(self) -> str:
-        return self._cwd.whoami()
+        """Return the username of the current user."""
+        return self._client.whoami(machine = self._machine)
 
     def gotocomputer_command(self, remotedir: str) -> str:
+        """Not possible for REST-API.
+        It's here only because it's an abstract method in the base class."""
         # TODO remove from interface
         raise NotImplementedError("firecrest does not support gotocomputer_command")
 
     def _exec_command_internal(self, command: str, **kwargs: Any) -> Any:
+        """Not possible for REST-API.
+        It's here only because it's an abstract method in the base class."""
         # TODO remove from interface
         raise NotImplementedError("firecrest does not support command execution")
 
     def exec_command_wait_bytes(
         self, command: str, stdin: Any = None, **kwargs: Any
     ) -> Any:
+        """Not possible for REST-API.
+        It's here only because it's an abstract method in the base class."""
         # TODO remove from interface
         raise NotImplementedError("firecrest does not support command execution")
-
-
-def validate_non_empty_string(ctx, param, value):  # type: ignore
-    """Validate that the number passed to this parameter is a positive number.
-
-    :param ctx: the `click.Context`
-    :param param: the parameter
-    :param value: the value passed for the parameter
-    :raises `click.BadParameter`: if the value is not a positive number
-    """
-    if not isinstance(value, str) or not value.strip():
-        from click import BadParameter
-
-        raise BadParameter(f"{value} is not string or is empty")
-
-    return value

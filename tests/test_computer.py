@@ -32,6 +32,7 @@ def _firecrest_computer(firecrest_server: FirecrestConfig):
         client_secret=firecrest_server.client_secret,
         client_machine=firecrest_server.machine,
         small_file_size_mb=firecrest_server.small_file_size_mb,
+        temp_directory=firecrest_server.temp_directory,
     )
     return computer
 
@@ -40,7 +41,8 @@ def _firecrest_computer(firecrest_server: FirecrestConfig):
 def test_whoami(firecrest_computer: orm.Computer):
     """check if it is possible to determine the username."""
     transport = firecrest_computer.get_transport()
-    assert isinstance(transport.whoami(), str)
+    assert transport.whoami() == 'test_user'
+
 
 
 @pytest.mark.usefixtures("aiida_profile_clean")

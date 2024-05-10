@@ -26,6 +26,7 @@ class FirecrestConfig:
     client_secret: str
     machine: str
     scratch_path: str
+    temp_directory: str
     small_file_size_mb: float = 1.0
 
 
@@ -47,10 +48,15 @@ class FirecrestMockServer:
         self._scratch = tmpdir / "scratch"
         self._scratch.mkdir()
         self._client_id = "test_client_id"
-        self._client_secret = "test_client_secret"
+        
+        Path(tmpdir / ".firecrest").mkdir()
+        self._client_secret = tmpdir / ".firecrest/secret" 
+        self._client_secret.write_text("test_client_secret")
+
         self._token_url = "https://test.auth.com/token"
         self._token_url_parsed = urlparse(self._token_url)
         self._username = "test_user"
+        self._temp_directory = tmpdir / "temp"
 
         self._slurm_job_id_counter = 0
         self._slurm_jobs: dict[str, dict[str, Any]] = {}
@@ -70,9 +76,10 @@ class FirecrestMockServer:
             url=self._url,
             token_uri=self._token_url,
             client_id=self._client_id,
-            client_secret=self._client_secret,
+            client_secret=str(self._client_secret.absolute()),
             machine=self._machine,
             scratch_path=str(self._scratch.absolute()),
+            temp_directory=str(self._temp_directory.absolute()),
         )
 
     def mock_request(
@@ -117,6 +124,8 @@ class FirecrestMockServer:
             self.utilities_file(params or {}, response)
         elif endpoint == "/utilities/ls":
             self.utilities_ls(params or {}, response)
+        elif endpoint == "/utilities/checksum":
+            self.utilities_checksum(params or {}, response)
         elif endpoint == "/utilities/symlink":
             self.utilities_symlink(data or {}, response)
         elif endpoint == "/utilities/mkdir":
@@ -139,8 +148,9 @@ class FirecrestMockServer:
             self.compute_jobs_path(data or {}, response)
         elif endpoint == "/compute/jobs":
             self.compute_jobs(params or {}, response)
-        elif endpoint.startswith("/tasks/"):
-            self.handle_task(endpoint[7:], response)
+        elif endpoint.startswith("/tasks"):
+            self.handle_task(params or {}, response)
+            # self.handle_task(endpoint[7:], response)
         elif endpoint == "/storage/xfer-external/upload":
             self.storage_xfer_external_upload(data or {}, response)
         elif endpoint == "/storage/xfer-external/download":
@@ -383,10 +393,27 @@ class FirecrestMockServer:
                     "permissions": stat.filemode(_stat.st_mode)[1:],
                     "type": "l" if item.is_symlink() else "d" if item.is_dir() else "-",
                     "size": _stat.st_size,
+                    "link_target": item.readlink() if item.is_symlink() else None,
                 }
             )
 
         add_success_response(response, 200, data)
+
+    def utilities_checksum(self, params: dict[str, Any], response: Response) -> None:
+        path = Path(params["targetPath"])
+        if not path.exists():
+            response.status_code = 400
+            response.headers["X-Invalid-Path"] = ""
+            return
+        import hashlib
+        # Firecrest uses sha256
+        sha256_hash = hashlib.sha256()
+        with open(path,"rb") as f:
+            for byte_block in iter(lambda: f.read(4096),b""):
+                sha256_hash.update(byte_block)
+        
+        checksum = sha256_hash.hexdigest()
+        add_success_response(response, 200, checksum)
 
     def utilities_chmod(self, data: dict[str, Any], response: Response) -> None:
         path = Path(data["targetPath"])
@@ -498,7 +525,9 @@ class FirecrestMockServer:
         response.status_code = 200
         response.raw = io.BytesIO(path.read_bytes())
 
-    def handle_task(self, task_id: str, response: Response) -> Response:
+    # def handle_task(self, task_id: str, response: Response) -> Response:
+    def handle_task(self, params: dict[str, Any], response: Response) -> Response:
+        task_id = params["tasks"].split(',')[0]
         if task_id not in self._tasks:
             return add_json_response(
                 response, 404, {"error": f"Task {task_id} does not exist"}
@@ -618,7 +647,32 @@ class FirecrestMockServer:
         # this skips statuses 111, 112 and 113,
         # see: https://github.com/eth-cscs/pyfirecrest/blob/5edbe85d11b977ed8f6943ca22e4fdc3d6f5e12d/firecrest/BasicClient.py#L143
         # and so we are assuming that the file is uploaded to the server
-
+        # I haven't updated the code to reflect this yet, but the new format of tasks is as follows:
+        #     {
+        #     'b1fbee4afa1e52fb54a3a38aede7c246': {
+        #         'created_at': '2024-06-13T17:01:25',
+        #         'data': {
+        #             'hash_id': 'b1fbee4afa1e52fb54a3a38aede7c246',
+        #             'msg': 'Waiting for Presigned URL to upload file to staging area (Amazon S3 - Signature v4)',
+        #             'source': 'RM.mkv',
+        #             'status': '110',
+        #             'system_addr': 'domvm3.cscs.ch:22',
+        #             'system_name': 'dom',
+        #             'target': '/scratch/snx3000tds/akhosrav/delete_me/linkto_target',
+        #             'trace_id': '',
+        #             'user': 'akhosrav'
+        #         },
+        #         'description': 'Waiting for Form URL from Object Storage to be retrieved',
+        #         'hash_id': 'b1fbee4afa1e52fb54a3a38aede7c246',
+        #         'last_modify': '2024-06-13T17:01:25',
+        #         'service': 'storage',
+        #         'status': '110',
+        #         'system': 'dom',
+        #         'task_id': 'b1fbee4afa1e52fb54a3a38aede7c246',
+        #         'updated_at': '2024-06-13T17:01:25',
+        #         'user': 'akhosrav'
+        #     }
+        # }
         if not task.form_retrieved:
             task.form_retrieved = True
             return add_json_response(

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 import string
 from typing import TYPE_CHECKING, Any, ClassVar
-
+import itertools
 from aiida.engine.processes.exit_code import ExitCode
 from aiida.schedulers import Scheduler, SchedulerError
 from aiida.schedulers.datastructures import JobInfo, JobState, JobTemplate
@@ -26,9 +26,8 @@ class FirecrestScheduler(Scheduler):
         "can_query_by_user": False,
     }
     _logger = Scheduler._logger.getChild("firecrest")
+    _DEFAULT_PAGE_SIZE = 25
 
-    # TODO if this is missing is causes plugin info to fail on verdi
-    is_process_function = False
 
     @classmethod
     def get_description(cls) -> str:
@@ -211,21 +210,27 @@ class FirecrestScheduler(Scheduler):
         user: str | None = None,
         as_dict: bool = False,
     ) -> list[JobInfo] | dict[str, JobInfo]:
+        results = []
         transport = self.transport
         with convert_header_exceptions({"machine": transport._machine}):
             # TODO handle pagination (pageSize, pageNumber) if many jobs
+            # This will do pagination, not manually tested becasue the server is damn slow.
             try:
-                results = transport._client.poll_active(transport._machine, jobs)
+                for page_iter in itertools.count():
+                    results += transport._client.poll_active(transport._machine, jobs, page_number=page_iter)
+                    if len(results) < self._DEFAULT_PAGE_SIZE:
+                        break
             except FirecrestException as exc:
                 raise SchedulerError(str(exc)) from exc
         job_list = []
         for raw_result in results:
+            # TODO: probably the if below is not needed, because recently, the server should return only the jobs of the current user
             if user is not None and raw_result["user"] != user:
                 continue
-
             this_job = JobInfo()  # type: ignore
 
             this_job.job_id = raw_result["jobid"]
+            # TODO: firecrest does not return the annotation, so set to an empty string. To be investigated how important that is.
             this_job.annotation = ""
 
             job_state_raw = raw_result["state"]
@@ -276,6 +281,7 @@ class FirecrestScheduler(Scheduler):
                     )
                 )
 
+            # TODO: The block below is commented, because the number of allocated cores is not returned by the FirecREST server
             # try:
             #     this_job.num_mpiprocs = int(thisjob_dict['number_cpus'])
             # except ValueError:
@@ -290,13 +296,15 @@ class FirecrestScheduler(Scheduler):
             # therefore it requires some parsing, that is unnecessary now.
             # I just store is as a raw string for the moment, and I leave
             # this_job.allocated_machines undefined
-            # if this_job.job_state == JobState.RUNNING:
-            #     this_job.allocated_machines_raw = thisjob_dict['allocated_machines']
+            if this_job.job_state == JobState.RUNNING:
+                this_job.allocated_machines_raw = raw_result["nodelist"]
 
             this_job.queue_name = raw_result["partition"]
 
+            # TODO: The block below is commented, because the time limit is not returned explicitly by the FirecREST server
+            # in any case, the time tags doesn't seem to be used by AiiDA anyway.
             # try:
-            #     walltime = (self._convert_time(thisjob_dict['time_limit']))
+            #     walltime = (self._convert_time(raw_result['time_limit']))
             #     this_job.requested_wallclock_time_seconds = walltime  # pylint: disable=invalid-name
             # except ValueError:
             #     self.logger.warning(f'Error parsing the time limit for job id {this_job.job_id}')
@@ -353,6 +361,7 @@ class FirecrestScheduler(Scheduler):
         with convert_header_exceptions({"machine": transport._machine}):
             transport._client.cancel(transport._machine, jobid)
         return True
+
 
 
 # see https://slurm.schedmd.com/squeue.html#lbAG

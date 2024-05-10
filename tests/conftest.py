@@ -109,6 +109,10 @@ def firecrest_server(
         monkeypatch.setattr(requests, "post", mock_request)
         monkeypatch.setattr(requests, "put", mock_request)
         monkeypatch.setattr(requests, "delete", mock_request)
+        monkeypatch.setattr(requests.Session, "get", mock_request)
+        monkeypatch.setattr(requests.Session, "post", mock_request)
+        monkeypatch.setattr(requests.Session, "put", mock_request)
+        monkeypatch.setattr(requests.Session, "delete", mock_request)
         yield server.config
 
     # save data on the server
