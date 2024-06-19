@@ -159,7 +159,6 @@ def test_get(firecrest_computer: orm.Computer, tmpdir: Path):
     with pytest.raises(ValueError):
         transport.get(_remote / "file1", Path(_local).relative_to(tmpdir))
 
-
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
@@ -214,11 +213,10 @@ def test_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
     assert Path(_local / "file1_link").read_text() == "file1"
     assert not Path(_local / "file1_link").is_symlink()
 
-
 @pytest.mark.usefixtures("aiida_profile_clean")
-def test_gettree_notar(firecrest_computer: orm.Computer, tmpdir: Path, monkeypatch):
+def test_gettree_notar(firecrest_computer: orm.Computer, tmpdir: Path):
     """ 
-    This test is to check if the gettree function is working as expected. Through non tar mode.
+    This test is to check `gettree` through non tar mode.
     payoff= False in this test, so just checking if getting files one by one is working as expected.
     """
     transport = firecrest_computer.get_transport()
@@ -256,7 +254,7 @@ def test_gettree_notar(firecrest_computer: orm.Computer, tmpdir: Path, monkeypat
     with pytest.raises(ValueError):
         transport.gettree(_remote, Path(_local).relative_to(tmpdir))
 
-    # If destination directory does not exists, AiiDA expects transport make the new path as root not _remote.name
+    # If destination directory does not exists, AiiDA expects transport make the new path as root not using _remote.name
     transport.gettree(_remote, _local / "newdir")
     _root = _local / "newdir"
     # tree should be copied recursively
@@ -297,7 +295,7 @@ def test_gettree_notar(firecrest_computer: orm.Computer, tmpdir: Path, monkeypat
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_gettree_bytar(firecrest_computer: orm.Computer, tmpdir: Path):
     """ 
-    This test is to check if the gettree function is working as expected. Through non tar mode.
+    This test is to check `gettree` through non tar mode.
     bytar= True in this test.
     """
     transport = firecrest_computer.get_transport()
@@ -374,4 +372,261 @@ def test_gettree_bytar(firecrest_computer: orm.Computer, tmpdir: Path):
     assert not Path(_root / "dir1" / "file10_link").is_symlink()
     assert not Path(_root / "dir1" / "dir20_link" / "file3").is_symlink()
 
+
+
+@pytest.mark.usefixtures("aiida_profile_clean")
+def test_put(firecrest_computer: orm.Computer, tmpdir: Path):
+    """ 
+    This is minimal test is to check if put() is raising errors as expected,
+    and directing to putfile() and puttree() as expected.
+    Mainly just checking error handeling and folder creation.
+    """
+    transport = firecrest_computer.get_transport()
+
+    _remote = tmpdir / "remotedir"
+    _local = tmpdir / "localdir"
+    _remote.mkdir()
+    _local.mkdir()
+  
+
+    # check if the code is directing to putfile() or puttree() as expected
+    with patch.object(transport, 'puttree', autospec=True) as mock_puttree:
+        transport.put(_local, _remote)
+    mock_puttree.assert_called_once()
+
+    with patch.object(transport, 'puttree', autospec=True) as mock_puttree:
+        os.symlink(_local, tmpdir / "dir_link")
+        transport.put(tmpdir / "dir_link", _remote)
+    mock_puttree.assert_called_once()
+
+    with patch.object(transport, 'putfile', autospec=True) as mock_putfile:
+        Path(_local / "file1").write_text("file1")
+        transport.put(_local / "file1", _remote / "file1")
+    mock_putfile.assert_called_once()
+
+    with patch.object(transport, 'putfile', autospec=True) as mock_putfile:
+        os.symlink(_local / "file1", _local / "file1_link")
+        transport.put(_local / "file1_link", _remote / "file1_link")
+    mock_putfile.assert_called_once()
+
+    # raise if local file/folder does not exist
+    with pytest.raises(FileNotFoundError):
+        transport.put(_local / "does_not_exist", _remote)
+    transport.put(_local / "does_not_exist", _remote, ignore_nonexisting=True)
+    
+    # raise if localpath is relative
+    with pytest.raises(ValueError):
+        transport.put(Path(_local).relative_to(tmpdir), _remote)
+    with pytest.raises(ValueError):
+        transport.put(Path(_local / "file1").relative_to(tmpdir), _remote)
+
+@pytest.mark.usefixtures("aiida_profile_clean")
+def test_putfile(firecrest_computer: orm.Computer, tmpdir: Path):
+    transport = firecrest_computer.get_transport()
+
+    _remote = tmpdir / "remotedir"
+    _local = tmpdir / "localdir"
+    _remote.mkdir()
+    _local.mkdir()
+
+    Path(_local / "file1").write_text("file1")
+    Path(_local / ".hidden").write_text(".hidden")
+    os.symlink(_local / "file1", _local / "file1_link")
+    
+
+    # raise if local file does not exist
+    with pytest.raises(FileNotFoundError):
+        transport.putfile(_local/ "does_not_exist" ,_remote)
+
+    # raise if remotefilename is not provided
+    with pytest.raises(ValueError):
+        transport.putfile(_local / "file1", _remote)
+
+    # raise if localpath is relative
+    with pytest.raises(ValueError):
+        transport.putfile(Path(_local / "file1").relative_to(tmpdir), _remote / "file1")
+
+    # don't mix up directory with file
+    with pytest.raises(ValueError):
+        transport.putfile(_local, _remote / "file1")
+    
+    # write where I tell you to
+    transport.putfile(_local / "file1", _remote / "file1")
+    transport.putfile(_local / "file1", _remote / "file1-prime")
+    assert Path(_remote / "file1").read_text() == "file1"
+    assert Path(_remote / "file1-prime").read_text() == "file1"
+    
+    # always overwrite
+    transport.putfile(_local / "file1", _remote / "file1")
+    assert Path(_remote / "file1").read_text() == "file1"
+
+    Path(_remote / "file1").write_text("notfile1")
+
+    transport.putfile(_local / "file1", _remote / "file1")
+    assert Path(_remote / "file1").read_text() == "file1"
+
+    # don't skip hidden files
+    transport.putfile(_local / ".hidden", _remote / ".hidden-prime")
+    assert Path(_remote / ".hidden-prime").read_text() == ".hidden"
+
+    # follow links
+    transport.putfile(_local / "file1_link", _remote / "file1_link")
+    assert Path(_remote / "file1_link").read_text() == "file1"
+    assert not Path(_remote / "file1_link").is_symlink()
+
+@pytest.mark.usefixtures("aiida_profile_clean")
+def test_puttree_notar(firecrest_computer: orm.Computer, tmpdir: Path):
+    """
+    This test is to check `puttree` through non tar mode.
+    payoff= False in this test, so just checking if putting files one by one is working as expected.
+    """
+    transport = firecrest_computer.get_transport()
+    transport.payoff_override = False
+
+    _remote = tmpdir / "remotedir"
+    _local = tmpdir / "localdir"
+    _remote.mkdir()
+    _local.mkdir()
+    # a typical tree
+    Path(_local / "dir1").mkdir()
+    Path(_local / "dir2").mkdir()
+    Path(_local / "file1").write_text("file1")
+    Path(_local / ".hidden").write_text(".hidden")
+    Path(_local / "dir1" / "file2").write_text("file2")
+    Path(_local / "dir2" / "file3").write_text("file3")
+    # with symlinks to a file even if pointing to a relative path
+    os.symlink(_local / "file1", _local / "dir1" / "file1_link")
+    os.symlink(Path("../file1"), _local / "dir1" / "file10_link")
+    # with symlinks to a folder even if pointing to a relative path 
+    os.symlink(_local / "dir2",  _local / "dir1" / "dir2_link")
+    os.symlink(Path("../dir2" ), _local / "dir1" / "dir20_link")
+    
+    # raise if local file does not exist
+    with pytest.raises(OSError):
+        transport.puttree(_local / "does_not_exist", _remote)
+    
+    # raise if local is a file
+    with pytest.raises(ValueError):
+        Path(tmpdir / "isfile").touch()
+        transport.puttree(tmpdir / "isfile", _remote)
+    
+    # raise if localpath is relative
+    with pytest.raises(ValueError):
+        transport.puttree(Path(_local).relative_to(tmpdir), _remote)
+    
+    # If destination directory does not exists, AiiDA expects transport make the new path as root not using _local.name
+    transport.puttree(_local, _remote / "newdir")
+    _root = _remote / "newdir"
+    # tree should be copied recursively
+    assert Path(_root / "file1").read_text() == "file1"
+    assert Path(_root / ".hidden").read_text() == ".hidden"
+    assert Path(_root / "dir1" / "file2").read_text() == "file2"
+    assert Path(_root / "dir2" / "file3").read_text() == "file3"
+    # symlink should be followed
+    assert Path(_root / "dir1" / "file1_link").read_text() == "file1"
+    assert Path(_root / "dir1" / "dir2_link" / "file3").read_text() == "file3"
+    assert Path(_root / "dir1" / "file10_link").read_text() == "file1"
+    assert Path(_root / "dir1" / "dir20_link" / "file3").read_text() == "file3"
+    assert not Path(_root / "dir1" / "file1_link").is_symlink()
+    assert not Path(_root / "dir1" / "dir2_link" / "file3").is_symlink()
+    assert not Path(_root / "dir1" / "file10_link").is_symlink()
+    assert not Path(_root / "dir1" / "dir20_link" / "file3").is_symlink()
+
+
+    # If destination directory does exists, AiiDA expects transport make _local.name and write into it
+    # however this might have changed in the newer versions of AiiDA ~ 2.6.0 (IDK)
+    transport.puttree(_local, _remote / "newdir")
+    _root = _remote / "newdir" / Path(_local).name
+    # tree should be copied recursively
+    assert Path(_root / "file1").read_text() == "file1"
+    assert Path(_root / ".hidden").read_text() == ".hidden"
+    assert Path(_root / "dir1" / "file2").read_text() == "file2"
+    assert Path(_root / "dir2" / "file3").read_text() == "file3"
+    # symlink should be followed
+    assert Path(_root / "dir1" / "file1_link").read_text() == "file1"
+    assert Path(_root / "dir1" / "dir2_link" / "file3").read_text() == "file3"
+    assert Path(_root / "dir1" / "file10_link").read_text() == "file1"
+    assert Path(_root / "dir1" / "dir20_link" / "file3").read_text() == "file3"
+    assert not Path(_root / "dir1" / "file1_link").is_symlink()
+    assert not Path(_root / "dir1" / "dir2_link" / "file3").is_symlink()
+    assert not Path(_root / "dir1" / "file10_link").is_symlink()
+    assert not Path(_root / "dir1" / "dir20_link" / "file3").is_symlink()
+
+@pytest.mark.usefixtures("aiida_profile_clean")
+def test_puttree_bytar(firecrest_computer: orm.Computer, tmpdir: Path):
+    """
+    This test is to check `puttree` through tar mode.
+    payoff= True in this test.
+    """
+    transport = firecrest_computer.get_transport()
+    transport.payoff_override = True
+
+    _remote = tmpdir / "remotedir"
+    _local = tmpdir / "localdir"
+    _remote.mkdir()
+    _local.mkdir()
+    # a typical tree
+    Path(_local / "dir1").mkdir()
+    Path(_local / "dir2").mkdir()
+    Path(_local / "file1").write_text("file1")
+    Path(_local / ".hidden").write_text(".hidden")
+    Path(_local / "dir1" / "file2").write_text("file2")
+    Path(_local / "dir2" / "file3").write_text("file3")
+    # with symlinks to a file even if pointing to a relative path
+    os.symlink(_local / "file1", _local / "dir1" / "file1_link")
+    os.symlink(Path("../file1"), _local / "dir1" / "file10_link")
+    # with symlinks to a folder even if pointing to a relative path 
+    os.symlink(_local / "dir2",  _local / "dir1" / "dir2_link")
+    os.symlink(Path("../dir2" ), _local / "dir1" / "dir20_link")
+    
+    # raise if local file does not exist
+    with pytest.raises(OSError):
+        transport.puttree(_local / "does_not_exist", _remote)
+    
+    # raise if local is a file
+    with pytest.raises(ValueError):
+        Path(tmpdir / "isfile").touch()
+        transport.puttree(tmpdir / "isfile", _remote)
+    
+    # raise if localpath is relative
+    with pytest.raises(ValueError):
+        transport.puttree(Path(_local).relative_to(tmpdir), _remote)
+    
+    # If destination directory does not exists, AiiDA expects transport make the new path as root not using _local.name
+    transport.puttree(_local, _remote / "newdir")
+    _root = _remote / "newdir"
+    # tree should be copied recursively
+    assert Path(_root / "file1").read_text() == "file1"
+    assert Path(_root / ".hidden").read_text() == ".hidden"
+    assert Path(_root / "dir1" / "file2").read_text() == "file2"
+    assert Path(_root / "dir2" / "file3").read_text() == "file3"
+    # symlink should be followed
+    assert Path(_root / "dir1" / "file1_link").read_text() == "file1"
+    assert Path(_root / "dir1" / "dir2_link" / "file3").read_text() == "file3"
+    assert Path(_root / "dir1" / "file10_link").read_text() == "file1"
+    assert Path(_root / "dir1" / "dir20_link" / "file3").read_text() == "file3"
+    assert not Path(_root / "dir1" / "file1_link").is_symlink()
+    assert not Path(_root / "dir1" / "dir2_link" / "file3").is_symlink()
+    assert not Path(_root / "dir1" / "file10_link").is_symlink()
+    assert not Path(_root / "dir1" / "dir20_link" / "file3").is_symlink()
+
+
+    # If destination directory does exists, AiiDA expects transport make _local.name and write into it
+    # however this might have changed in the newer versions of AiiDA ~ 2.6.0 (IDK)
+    transport.puttree(_local, _remote / "newdir")
+    _root = _remote / "newdir" / Path(_local).name
+    # tree should be copied recursively
+    assert Path(_root / "file1").read_text() == "file1"
+    assert Path(_root / ".hidden").read_text() == ".hidden"
+    assert Path(_root / "dir1" / "file2").read_text() == "file2"
+    assert Path(_root / "dir2" / "file3").read_text() == "file3"
+    # symlink should be followed
+    assert Path(_root / "dir1" / "file1_link").read_text() == "file1"
+    assert Path(_root / "dir1" / "dir2_link" / "file3").read_text() == "file3"
+    assert Path(_root / "dir1" / "file10_link").read_text() == "file1"
+    assert Path(_root / "dir1" / "dir20_link" / "file3").read_text() == "file3"
+    assert not Path(_root / "dir1" / "file1_link").is_symlink()
+    assert not Path(_root / "dir1" / "dir2_link" / "file3").is_symlink()
+    assert not Path(_root / "dir1" / "file10_link").is_symlink()
+    assert not Path(_root / "dir1" / "dir20_link" / "file3").is_symlink()
 

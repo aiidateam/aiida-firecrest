@@ -763,7 +763,9 @@ class FirecrestTransport(Transport):
         if not localpath.is_absolute():
             raise ValueError("The localpath must be an absolute path")
         if not localpath.is_file():
-            raise ValueError(f"Input localpath is not a file: {localpath}")
+            if not localpath.exists():
+                raise FileNotFoundError(f"Local file does not exist: {localpath}")
+            raise ValueError(f"Input localpath is not a file {localpath}")
         remote = self._cwd.joinpath(remotepath)#.enable_cache() it's removed from from path.py to be investigated
         
 
@@ -831,16 +833,11 @@ class FirecrestTransport(Transport):
         tarpath = localpath.parent.joinpath(f"temp_{_}.tar")
         remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
         with tarfile.open(tarpath, "w", dereference=dereference) as tar:
-            if dereference:
-                for root, dirs, files in os.walk(localpath):
-                    for file in files:
-                        full_path = os.path.join(root, file)
-                        relative_path = os.path.relpath(full_path, localpath)
-                        tar.add(full_path, arcname=relative_path)
-            else:
-                # iterdir() ignores symbolic links
-                for item in localpath.iterdir(): 
-                    tar.add(item, arcname=item.name)
+            for root, dirs, files in os.walk(localpath, followlinks=dereference):
+                for file in files:
+                    full_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(full_path, localpath)
+                    tar.add(full_path, arcname=relative_path)
 
         # Upload
         try:
@@ -909,7 +906,7 @@ class FirecrestTransport(Transport):
             self._puttreetar(localpath, remotepath)
         else:
             # otherwise send the files one by one
-            for dirpath, _, filenames in os.walk(localpath):
+            for dirpath, _, filenames in os.walk(localpath, followlinks=dereference):
                 rel_folder = os.path.relpath(path=dirpath, start=localpath)
 
                 rm_parent_now = remotepath.joinpath(rel_folder)
@@ -929,7 +926,7 @@ class FirecrestTransport(Transport):
             note: dereference should be always True, otherwise the symlinks will not be functional.        
         """
         # TODO ssh does a lot more
-        # update to above TODO: I made a manual test with ssh. added some extra care in puttree and gettree and now it's working fine
+        # update on the TODO: I made a manual test with ssh. added some extra care in puttree and gettree and now it's working fine
         
         if not dereference:
             raise NotImplementedError

@@ -66,6 +66,7 @@ class MockFirecrest:
         self.symlink = symlink
         self.checksum = checksum
         self.simple_download = simple_download
+        self.simple_upload = simple_upload
         self.compress = compress
         self.extract = extract
         self.submit = submit
@@ -169,8 +170,19 @@ def simple_download(machine: str, remote_path: str, local_path: str):
         raise IsADirectoryError(f"{remote_path} is a directory")
     if not Path(remote_path).exists():
         raise FileNotFoundError(f"{remote_path} does not exist")
-    # print(f"{remote_path} {local_path}")
     os.system(f"cp {remote_path} {local_path}")
+
+def simple_upload(machine: str, local_path: str, remote_path: str, file_name: str = None):
+    # this procedure is complecated in firecrest, but I am simplifying it here
+    # we don't care about the details of the upload, we just want to make sure
+    # that the aiida-firecrest code is calling the right functions at right time
+    if Path(local_path).is_dir():
+        raise IsADirectoryError(f"{local_path} is a directory")
+    if not Path(local_path).exists():
+        raise FileNotFoundError(f"{local_path} does not exist")
+    if file_name:
+        remote_path = os.path.join(remote_path, file_name)
+    os.system(f"cp {local_path} {remote_path}")    
 
 def copy(machine: str, source_path: str, target_path: str):
     # this is how firecrest does it
@@ -188,8 +200,7 @@ def compress(machine: str, source_path: str, target_path: str, dereference: bool
 def extract(machine: str, source_path: str, target_path: str):
     # this is how firecrest does it
     # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/common/cscs_api_common.py#L1110C18-L1110C65
-    breakpoint()
-    os.system("tar -xf '{source_path}' -C '{target_path}'")
+    os.system(f"tar -xf '{source_path}' -C '{target_path}'")
 
 def checksum(machine: str, remote_path: str) -> int:
     if not remote_path.exists():
