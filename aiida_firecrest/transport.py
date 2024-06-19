@@ -451,7 +451,6 @@ class FirecrestTransport(Transport):
         """Copy a file on the remote. FirecREST does not support symlink copying.
 
         :param dereference: If True, copy the target of the symlink instead of the symlink itself.
-        Warning! even if deference is set to False, I'm not sure if the symlink will be functional after the copy.
         """
         source = self._cwd.joinpath(remotesource)#.enable_cache() it's removed from from path.py to be investigated
         destination = self._cwd.joinpath(remotedestination)#.enable_cache() it's removed from from path.py to be investigated
@@ -460,7 +459,9 @@ class FirecrestTransport(Transport):
         if not source.exists():
             raise FileNotFoundError(f"Source file does not exist: {source}")
         if not source.is_file():
-            raise FileNotFoundError(f"Source is not a file: {source}")
+            raise ValueError(f"Source is not a file: {source}")
+        if not destination.exists() and not source.is_file():
+            raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
         source.copy_to(destination)
         # I removed symlink copy, becasue it's really not a file copy, it's a link copy
@@ -473,8 +474,8 @@ class FirecrestTransport(Transport):
         """Copy a directory on the remote. FirecREST does not support symlink copying.
         
         :param dereference: If True, copy the target of the symlink instead of the symlink itself.
-        Warning! even if deference is set to False, I'm not sure if the symlink will be functional after the copy.
         """
+        #TODO: check if deference is set to False, symlinks will be functional after the copy in Firecrest server.
 
         source = self._cwd.joinpath(remotesource)#.enable_cache().enable_cache() it's removed from from path.py to be investigated
         destination = (
@@ -485,15 +486,12 @@ class FirecrestTransport(Transport):
         if not source.exists():
             raise FileNotFoundError(f"Source file does not exist: {source}")
         if not source.is_dir():
-            raise FileNotFoundError(f"Source is not a directory: {source}")
+            raise ValueError(f"Source is not a directory: {source}")
+        if not destination.exists():
+            raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
         source.copy_to(destination)
-        # TODO: the block belowe does not work for nested symlinks, if we really need that, 
-        # we have to asked them to make this option for us in FirecREST.
-        # if not dereference and source.is_symlink():
-        #     destination.symlink_to(source)
-        # else:
-        #     source.copy_to(destination)
+
 
     def copy(
         self,
@@ -505,11 +503,12 @@ class FirecrestTransport(Transport):
         """Copy a file or directory on the remote. FirecREST does not support symlink copying.
 
         :param recursive: If True, copy directories recursively.
-        note that the non-recursive option is not implemented in FirecREST server
+        note that the non-recursive option is not implemented in FirecREST server. 
+        And it's not used in upstream, anyways...
         
         :param dereference: If True, copy the target of the symlink instead of the symlink itself.
-        Warning! even if deference is set to False, I'm not sure if the symlink will be functional after the copy.
         """
+        # TODO: investigate overwrite (?)
 
         if not recursive:
             # TODO this appears to not actually be used upstream, so just remove there
@@ -520,19 +519,13 @@ class FirecrestTransport(Transport):
         destination = self._cwd.joinpath(remotedestination)#.enable_cache() it's removed from from path.py to be investigated
 
         if not source.exists():
-            raise FileNotFoundError(f"Source file does not exist: {source}")
+            raise FileNotFoundError(f"Source does not exist: {source}")
+        if not destination.exists() and not source.is_file():
+            raise FileNotFoundError(f"Destination does not exist: {destination}")
 
         source.copy_to(destination)
-        # TODO: the block belowe does not work for nested symlinks, if we really need that,
-        # we have to asked them to make this option for us
-        # if not dereference and source.is_symlink():
-        #     destination.symlink_to(source)
-        # else:
-        #     source.copy_to(destination)
 
 
-    # TODO check symlink handling for get methods
-    # symlink handeling is done.
     # TODO do get/put methods need to handle glob patterns?
     # Apparently not, but I'm not clear how glob() iglob() are going to behave here. We may need to implement them.
 

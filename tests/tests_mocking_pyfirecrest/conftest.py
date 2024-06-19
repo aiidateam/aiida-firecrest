@@ -69,6 +69,7 @@ class MockFirecrest:
         self.simple_upload = simple_upload
         self.compress = compress
         self.extract = extract
+        self.copy = copy
         self.submit = submit
         # self.poll_active = poll_active
 
@@ -195,7 +196,7 @@ def compress(machine: str, source_path: str, target_path: str, dereference: bool
     basedir = os.path.dirname(source_path)
     file_path = os.path.basename(source_path)
     deref = "--dereference" if dereference else ""
-    os.system(f"tar {deref} -czvf '{target_path}' -C '{basedir}' '{file_path}'")
+    os.system(f"tar {deref} -czf '{target_path}' -C '{basedir}' '{file_path}'")
 
 def extract(machine: str, source_path: str, target_path: str):
     # this is how firecrest does it
