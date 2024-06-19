@@ -9,6 +9,47 @@ from _pytest.terminal import TerminalReporter
 import firecrest.path
 import pytest
 import firecrest 
+from aiida import orm
+
+
+@pytest.fixture(name="firecrest_computer")
+def _firecrest_computer(myfirecrest, tmpdir: Path):
+    """Create and return a computer configured for Firecrest.
+
+    Note, the computer is not stored in the database.
+    """
+
+    # create a temp directory and set it as the workdir
+    _scratch = tmpdir / "scratch"
+    _temp_directory = tmpdir / "temp"
+    _scratch.mkdir()
+    _temp_directory.mkdir()
+
+    Path(tmpdir / ".firecrest").mkdir()
+    _secret_path = Path(tmpdir / ".firecrest/secret69")
+    _secret_path.write_text("SECRET_STRING")
+
+    computer = orm.Computer(
+        label="test_computer",
+        description="test computer",
+        hostname="-",
+        workdir=str(_scratch),
+        transport_type="firecrest",
+        scheduler_type="firecrest",
+    )
+    computer.set_minimum_job_poll_interval(5)
+    computer.set_default_mpiprocs_per_machine(1)
+    computer.configure(
+        url=' https://URI',
+        token_uri='https://TOKEN_URI',
+        client_id='CLIENT_ID',
+        client_secret=str(_secret_path),
+        client_machine='MACHINE_NAME',
+        small_file_size_mb=1.0,
+        temp_directory=str(_temp_directory),
+    )
+    return computer
+
 
 
 class MockFirecrest:
@@ -16,7 +57,7 @@ class MockFirecrest:
         self._firecrest_url = firecrest_url
         self.args = args
         self.kwargs = kwargs
-        self.whoami = mock_whomai
+        self.whoami = whomai
         self.list_files = list_files
         self.stat = stat_
         self.mkdir = mkdir
@@ -27,6 +68,8 @@ class MockFirecrest:
         self.simple_download = simple_download
         self.compress = compress
         self.extract = extract
+        self.submit = submit
+        # self.poll_active = poll_active
 
 
 class MockClientCredentialsAuth:
@@ -43,10 +86,13 @@ def myfirecrest(
     monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
     monkeypatch.setattr(firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth)
 
-def mock_whomai(machine: str):
+# def poll_active(machine: str, job_id: str):
+def submit(machine: str, script_str: str = None, script_remote_path: str = None, script_local_path: str = None):
+    pass
+
+def whomai(machine: str):
     assert machine == "MACHINE_NAME"
     return "test_user"
-
 
 def list_files(
     machine: str, target_path: str, recursive: bool = False, show_hidden: bool = False):
@@ -83,9 +129,6 @@ def list_files(
 
     return content_list
 
-# def _ls_to_st_mode(ftype: str, permissions: str) -> int:
-#     return int(permissions)
-
 def stat_(machine:str, targetpath: firecrest.path, dereference=True):
     stats = os.stat(targetpath, follow_symlinks= True if dereference else False)
     return {
@@ -99,7 +142,6 @@ def stat_(machine:str, targetpath: firecrest.path, dereference=True):
         "mtime": stats.st_mtime,
         "ctime": stats.st_ctime,
     }
-
 
 def mkdir(machine: str, target_path: str, p: bool = False):
     if p:
@@ -130,9 +172,10 @@ def simple_download(machine: str, remote_path: str, local_path: str):
     # print(f"{remote_path} {local_path}")
     os.system(f"cp {remote_path} {local_path}")
 
-# def copy(machine: str, source_path: str, target_path: str):
-# firecrest copy action = f"cp --force -dR --preserve=all -- '{sourcePath}' '{targetPath}'"
-# https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/utilities/utilities.py#L451C1-L452C1    
+def copy(machine: str, source_path: str, target_path: str):
+    # this is how firecrest does it
+    # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/utilities/utilities.py#L451C1-L452C1    
+    os.system(f"cp --force -dR --preserve=all -- '{source_path}' '{target_path}'")
 
 def compress(machine: str, source_path: str, target_path: str, dereference: bool = True):
     # this is how firecrest does it
@@ -147,7 +190,6 @@ def extract(machine: str, source_path: str, target_path: str):
     # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/common/cscs_api_common.py#L1110C18-L1110C65
     breakpoint()
     os.system("tar -xf '{source_path}' -C '{target_path}'")
-
 
 def checksum(machine: str, remote_path: str) -> int:
     if not remote_path.exists():
