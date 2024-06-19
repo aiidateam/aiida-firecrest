@@ -128,6 +128,13 @@ pre-commit run --all-files
 
 ### Testing
 
+There are two types of tests: mocking the PyFirecREST or the FirecREST server.
+While the former is a good practice to ensure that all three (`aiida-firecrest`, FirecREST, and PyFirecREST) work flawlessly, debugging may not always be easy because it may not always be obvious which of the three is causing a bug.
+Because of this, we have another set of tests that only verify the functionality of `aiida-firecrest` by directly mocking PyFirecREST. Maintaining the second set in `tests/tests_mocking_pyfirecrest/` is simpler because we just need to monitor the return values of PyFirecREST​. While maintaining the former is more difficult as you have to keep up with both FirecREST and PyFirecREST.
+
+
+#### Mocking FirecREST server
+
 It is recommended to run the tests via [tox](https://tox.readthedocs.io/en/latest/).
 
 ```bash
@@ -174,7 +181,7 @@ you can use the `--firecrest-requests` option:
 tox -- --firecrest-requests
 ```
 
-### Notes on using the demo server on MacOS
+##### Notes on using the demo server on MacOS
 
 A few issues have been noted when using the demo server on MacOS (non-Mx):
 
@@ -195,3 +202,13 @@ although it is of note that you can find these files directly where you your `fi
 [codecov-link]: https://codecov.io/gh/aiidateam/aiida-firecrest
 [black-badge]: https://img.shields.io/badge/code%20style-black-000000.svg
 [black-link]: https://github.com/ambv/black
+
+
+
+#### Mocking PyFirecREST
+
+These set of test do not gurantee that the firecrest protocol is working, but it's very usefull to quickly check if `aiida-firecrest` is behaving as it's expected to do. To run just simply use `pytest`.
+
+
+If these tests, pass and still you have trouble in real deploymeny that means your installed version of pyfirecrest is behaving differently from what `aiida-firecrest` expects in `MockFirecrest` in `tests/tests_mocking_pyfirecrest/conftest.py`.
+In order to solve that, first spot what is different and then solve or raise to `pyfirecrest` if relevant. 
