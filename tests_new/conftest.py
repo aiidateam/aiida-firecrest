@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import stat
+import hashlib
 
 from _pytest.terminal import TerminalReporter
 import firecrest.path
@@ -21,6 +23,11 @@ class MockFirecrest:
         self.simple_delete = simple_delete
         self.parameters = parameters
         self.symlink = symlink
+        self.checksum = checksum
+        self.simple_download = simple_download
+        self.compress = compress
+        self.extract = extract
+
 
 class MockClientCredentialsAuth:
     def __init__(self, *args, **kwargs):
@@ -32,19 +39,14 @@ def myfirecrest(
     pytestconfig: pytest.Config,
     monkeypatch,
 ):
-    
+
     monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
     monkeypatch.setattr(firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth)
-    # monkeypatch.setattr(firecrest.path, "_ls_to_st_mode", _ls_to_st_mode)
-
-
 
 def mock_whomai(machine: str):
     assert machine == "MACHINE_NAME"
     return "test_user"
 
-
-import stat
 
 def list_files(
     machine: str, target_path: str, recursive: bool = False, show_hidden: bool = False):
@@ -57,20 +59,19 @@ def list_files(
         for name in dirs + files:
             full_path = os.path.join(root, name)
             relative_path = Path(os.path.relpath(root, target_path)).joinpath(name).as_posix()
-            # breakpoint()
-            print(relative_path)
-            if os.path.isdir(full_path):
-                content_type = 'd'
+            if os.path.islink(full_path):
+                content_type = 'l'
+                link_target = os.readlink(full_path) if os.path.islink(full_path) else None
             elif os.path.isfile(full_path):
                 content_type = '-'
-            elif os.path.islink(full_path):
-                content_type = 'l'
+                link_target = None
+            elif os.path.isdir(full_path):
+                content_type = 'd'
+                link_target = None
             else:
                 content_type = 'NON'
-            link_target = os.readlink(full_path) if os.path.islink(full_path) else None
-            # permissions = stat.S_IMODE(os.lstat(full_path).st_mode)
+                link_target = None
             permissions = stat.filemode(Path(full_path).lstat().st_mode)[1:] 
-            # stat.S_ISREG(permissions)
             if name.startswith('.') and not show_hidden:
                 continue
             content_list.append({
@@ -86,7 +87,7 @@ def list_files(
 #     return int(permissions)
 
 def stat_(machine:str, targetpath: firecrest.path, dereference=True):
-    stats = os.stat(targetpath)
+    stats = os.stat(targetpath, follow_symlinks= True if dereference else False)
     return {
         "ino": stats.st_ino,
         "dev": stats.st_dev,
@@ -115,8 +116,49 @@ def simple_delete(machine: str, target_path: str):
         os.remove(target_path)
 
 def symlink(machine: str, target_path: str, link_path: str):
-    os.symlink(target_path, link_path)
+    # this is how firecrest does it
+    os.system(f"ln -s {target_path}  {link_path}")
 
+def simple_download(machine: str, remote_path: str, local_path: str):
+    # this procedure is complecated in firecrest, but I am simplifying it here
+    # we don't care about the details of the download, we just want to make sure
+    # that the aiida-firecrest code is calling the right functions at right time
+    if Path(remote_path).is_dir():
+        raise IsADirectoryError(f"{remote_path} is a directory")
+    if not Path(remote_path).exists():
+        raise FileNotFoundError(f"{remote_path} does not exist")
+    # print(f"{remote_path} {local_path}")
+    os.system(f"cp {remote_path} {local_path}")
+
+# def copy(machine: str, source_path: str, target_path: str):
+# firecrest copy action = f"cp --force -dR --preserve=all -- '{sourcePath}' '{targetPath}'"
+# https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/utilities/utilities.py#L451C1-L452C1    
+
+def compress(machine: str, source_path: str, target_path: str, dereference: bool = True):
+    # this is how firecrest does it
+    # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/utilities/utilities.py#L460
+    basedir = os.path.dirname(source_path)
+    file_path = os.path.basename(source_path)
+    deref = "--dereference" if dereference else ""
+    os.system(f"tar {deref} -czvf '{target_path}' -C '{basedir}' '{file_path}'")
+
+def extract(machine: str, source_path: str, target_path: str):
+    # this is how firecrest does it
+    # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/common/cscs_api_common.py#L1110C18-L1110C65
+    breakpoint()
+    os.system("tar -xf '{source_path}' -C '{target_path}'")
+
+
+def checksum(machine: str, remote_path: str) -> int:
+    if not remote_path.exists():
+        return False
+    # Firecrest uses sha256
+    sha256_hash = hashlib.sha256()
+    with open(remote_path,"rb") as f:
+        for byte_block in iter(lambda: f.read(4096),b""):
+            sha256_hash.update(byte_block)
+
+    return sha256_hash.hexdigest()
 
 def parameters():
     # note: I took this from https://firecrest-tds.cscs.ch/ or https://firecrest.cscs.ch/

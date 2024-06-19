@@ -296,8 +296,10 @@ class FirecrestTransport(Transport):
         self._client_id = client_id
         self._temp_directory =  Path(temp_directory)
         self._small_file_size_bytes = int(small_file_size_mb * 1024 * 1024)
+        
+        self._payoff_override = None
+        
         secret = Path(client_secret).read_text()
-
         try:
             self._client = Firecrest(
                 firecrest_url=self._url,
@@ -313,6 +315,15 @@ class FirecrestTransport(Transport):
         """Return the name of the plugin."""
         return self.__class__.__name__
 
+    @property
+    def payoff_override(self):
+        return self._payoff_override
+
+    @payoff_override.setter
+    def payoff_override(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("payoff_override must be a boolean value")
+        self._payoff_override = value
 
     @classmethod
     def get_description(cls) -> str:
@@ -531,7 +542,7 @@ class FirecrestTransport(Transport):
         """Get a file from the remote.
 
         :param dereference: If True, follow symlinks.
-            note: we don't support downloading symlinks, so dereference is always should be True
+            note: we don't support downloading symlinks, so dereference should always be True
         
         """
 
@@ -615,8 +626,8 @@ class FirecrestTransport(Transport):
         """
         # TODO manual testing the submit behaviour
 
-        if dereference:
-            raise NotImplementedError("Dereferencing compression not implemented in pyFirecREST.")
+        # if dereference:
+        #     raise NotImplementedError("Dereferencing compression not implemented in pyFirecREST.")
 
         _ = uuid.uuid4()        # Attempt direct compress
         remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
@@ -639,13 +650,13 @@ class FirecrestTransport(Transport):
             self.remove(remote_path_temp)
 
         # Extract the downloaded file locally
-        # this is a bit hard coded, what I wanted to do: to extract the files in the same directory as the tar file
         try:
-            with tarfile.open(localpath_temp, "r") as tar:
-                members = [m for m in tar.getmembers() if m.name.startswith(remotepath.name)]
-                for member in members:
-                    member.name = os.path.relpath(member.name, remotepath.name)
-                    tar.extract(member, path=localpath)
+            # with tarfile.open(localpath_temp, "r") as tar:
+            #     members = [m for m in tar.getmembers() if m.name.startswith(remotepath.name)]
+            #     for member in members:
+            #         member.name = os.path.relpath(member.name, remotepath.name)
+            #         tar.extract(member, path=localpath)
+            os.system(f"tar -xf '{localpath_temp}' --strip-components=1 -C {localpath}")
         finally:
             localpath_temp.unlink()
                 
@@ -683,13 +694,13 @@ class FirecrestTransport(Transport):
             # Destination directory does not exist, create and move content 69 inside it
             local.mkdir(parents=True, exist_ok=False)
         # SSH transport behaviour, 69 is a directory
-            # transport.get('somepath/69', 'someremotepath/') == transport.put('somepath/69', 'someremotepath') 
-            # transport.get('somepath/69', 'someremotepath/') == transport.put('somepath/69/', 'someremotepath/')
+            # transport.get('somepath/69', 'someremotepath/') == transport.get('somepath/69', 'someremotepath') 
+            # transport.get('somepath/69', 'someremotepath/') == transport.get('somepath/69/', 'someremotepath/')
             # transport.get('someremotepath/69', 'somepath/69')  -->  if 69 exist,     create 69 inside it ('somepath/69/69')
             # transport.get('someremotepath/69', 'somepath/69')  -->  if 69 no texist, create 69 inside it ('somepath/69')
             # transport.get('somepath/69', 'someremotepath/6889/69')  -->  create everything, make_parent = True
         
-        if not dereference and self.payoff(remote):
+        if self.payoff(remote):
             # in this case send a request to the server to tar the files and then download the tar file
             # unfortunately, the server does not provide a deferenced tar option, yet. 
             self._gettreetar(remote, local)
@@ -697,7 +708,6 @@ class FirecrestTransport(Transport):
             # otherwise download the files one by one
             for remote_item in remote.iterdir(recursive=True):
                 local_item = local.joinpath(remote_item.relpath(remote))
-
                 if dereference and remote_item.is_symlink():
                     target_path = remote_item._cache.link_target
                     if not Path(target_path).is_absolute():
@@ -724,6 +734,8 @@ class FirecrestTransport(Transport):
             note: dereference should be always True, otherwise the symlinks will not be functional.
         """
         remote = self._cwd.joinpath(remotepath)#.enable_cache() it's removed from from path.py to be investigated
+        local = Path(localpath)
+        
         
         if remote.is_dir():
             self.gettree(remote, localpath)
@@ -789,6 +801,11 @@ class FirecrestTransport(Transport):
         # of serialization and "penalty" for sending multiple requests asycnhronusly or in a short time window. 
         # It responses in 1, 1.5, 3, 5, 7 seconds!
         # So right now, I think if the number of files is more than 3, it pays off to tar everything
+        
+        # If payoff_override is set, return its value
+        if self.payoff_override is not None:
+            return self.payoff_override
+
         if len(self.listdir(remotepath,recursive=True)) > 3:
             return True
         else:
@@ -846,7 +863,7 @@ class FirecrestTransport(Transport):
 
 
     def puttree(
-        self, localpath: str | Path, remotepath: str, dereference: bool=True,  *args: Any, **kwargs: Any
+        self, localpath: str | Path, remotepath: str, dereference: bool=True, *args: Any, **kwargs: Any
     ) -> None:
         """Put a directory to the remote. 
         
