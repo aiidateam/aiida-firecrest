@@ -42,15 +42,12 @@ def _create_secret_file(ctx: Context, param: InteractiveOption, value: str) -> s
     """Create a secret file if the value is not a path to a secret file.
     The path should be absolute, if it is not, the file will be created in ~/.firecrest.
     """
-    import uuid
-
-    from aiida.cmdline.utils import echo
-    from click import BadParameter
+    import click
 
     possible_path = Path(value)
     if os.path.isabs(possible_path):
         if not possible_path.exists():
-            raise BadParameter(f"Secret file not found at {value}")
+            raise click.BadParameter(f"Secret file not found at {value}")
         secret_path = possible_path
 
     else:
@@ -61,8 +58,10 @@ def _create_secret_file(ctx: Context, param: InteractiveOption, value: str) -> s
             # instead of a random number one could use the label or pk of the computer being configured
             secret_path = Path(f"~/.firecrest/secret_{_}").expanduser()
         secret_path.write_text(value)
-        echo.echo_report(f"Secret file created at {secret_path}")
-        echo.echo_report(f"Client Secret stored at {secret_path}")
+        click.echo(
+            click.style("Fireport: ", bold=True, fg="magenta")
+            + f"Client Secret stored at {secret_path}"
+        )
 
     return str(secret_path)
 
@@ -125,9 +124,13 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
         try:
             dummy.mkdir(dummy._temp_directory, ignore_existing=True)
         except Exception as e:
-            raise OSError(
+            raise click.BadParameter(
                 f"Could not create temp directory {dummy._temp_directory} on server: {e}"
             ) from e
+    click.echo(
+        click.style("Fireport: ", bold=True, fg="magenta")
+        + f"Temp directory is set to {value}"
+    )
 
     return value
 
@@ -147,7 +150,7 @@ def _dynamic_info_direct_size(
     :return: the value of small_file_size_mb.
 
     """
-    from aiida.cmdline.utils import echo
+    import click
 
     if value > 0:
         return value
@@ -182,7 +185,10 @@ def _dynamic_info_direct_size(
         if utilities_max_file_size is not None
         else 5.0
     )
-    echo.echo_report(f"Maximum file size for direct transfer: {small_file_size_mb} MB")
+    click.echo(
+        click.style("Fireport: ", bold=True, fg="magenta")
+        + f"Maximum file size for direct transfer: {small_file_size_mb} MB"
+    )
 
     return small_file_size_mb
 
@@ -264,7 +270,7 @@ class FirecrestTransport(Transport):
             {
                 "type": str,
                 "non_interactive_default": False,
-                "prompt": "Please enter a temp directory on server",
+                "prompt": "Temp directory on server",
                 "help": "A temp directory on server for creating temporary files (compression, extraction, etc.)",
                 "callback": _validate_temp_directory,
             },

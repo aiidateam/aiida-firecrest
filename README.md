@@ -5,7 +5,7 @@
 
 AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/), via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
 
-It is currently tested against [FirecREST v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0).
+It is currently tested against [FirecREST v2.4.0](https://github.com/eth-cscs/firecrest/releases/tag/v2.4.0).
 
 **NOTE:** This plugin is currently dependent on a fork of `aiida-core` from [PR #6043](https://github.com/aiidateam/aiida-core/pull/6043)
 
@@ -70,6 +70,7 @@ Client ID: username-client
 Client Secret: xyz
 Client Machine: daint
 Maximum file size for direct transfer (MB) [5.0]:
+Temp directory on server: /scratch/something/
 Report: Configuring computer firecrest-client for user chrisj_sewell@hotmail.com.
 Success: firecrest-client successfully configured for chrisj_sewell@hotmail.com
 ```
@@ -100,15 +101,9 @@ See [tests/test_calculation.py](tests/test_calculation.py) for a working example
 
 ### Current Issues
 
-Simple calculations are now running successfully [in the tests](tests/test_calculation.py), however, there are still some critical issues, before this could be production ready:
+Calculations are now running successfully, however, there are still issues regarding efficency, Could be improved:
 
-1. Currently uploading via firecrest changes `_aiidasubmit.sh` to `aiidasubmit.sh` 😱 ([see #191](https://github.com/eth-cscs/firecrest/issues/191)), so `metadata.options.submit_script_filename` should be set to this.
-
-2. Handling of large (>5Mb) file uploads/downloads needs to be improved
-
-3. Handling of the client secret, which should likely not be stored in the database
-
-4. Monitoring / management of API request rates could to be improved
+1. Monitoring / management of API request rates could to be improved. Currently it leaves it to hand of PyFirecREST.
 
 ## Development
 
@@ -134,6 +129,9 @@ Because of this, we have another set of tests that only verify the functionality
 
 
 #### Mocking FirecREST server
+
+These tests were successful against [FirecREST v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0).
+For newer version please refer to tests Mocking PyFirecREST
 
 It is recommended to run the tests via [tox](https://tox.readthedocs.io/en/latest/).
 
