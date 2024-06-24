@@ -48,9 +48,9 @@ class FirecrestMockServer:
         self._scratch = tmpdir / "scratch"
         self._scratch.mkdir()
         self._client_id = "test_client_id"
-        
+
         Path(tmpdir / ".firecrest").mkdir()
-        self._client_secret = tmpdir / ".firecrest/secret" 
+        self._client_secret = tmpdir / ".firecrest/secret"
         self._client_secret.write_text("test_client_secret")
 
         self._token_url = "https://test.auth.com/token"
@@ -406,12 +406,13 @@ class FirecrestMockServer:
             response.headers["X-Invalid-Path"] = ""
             return
         import hashlib
+
         # Firecrest uses sha256
         sha256_hash = hashlib.sha256()
-        with open(path,"rb") as f:
-            for byte_block in iter(lambda: f.read(4096),b""):
+        with open(path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
                 sha256_hash.update(byte_block)
-        
+
         checksum = sha256_hash.hexdigest()
         add_success_response(response, 200, checksum)
 
@@ -527,7 +528,7 @@ class FirecrestMockServer:
 
     # def handle_task(self, task_id: str, response: Response) -> Response:
     def handle_task(self, params: dict[str, Any], response: Response) -> Response:
-        task_id = params["tasks"].split(',')[0]
+        task_id = params["tasks"].split(",")[0]
         if task_id not in self._tasks:
             return add_json_response(
                 response, 404, {"error": f"Task {task_id} does not exist"}

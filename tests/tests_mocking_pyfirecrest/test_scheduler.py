@@ -1,11 +1,12 @@
 from pathlib import Path
 import random
-import pytest
-from conftest import values
 
 from aiida import orm
-from aiida_firecrest.scheduler import FirecrestScheduler
 from aiida.schedulers.datastructures import CodeRunMode, JobTemplate
+import pytest
+
+from aiida_firecrest.scheduler import FirecrestScheduler
+from conftest import Values
 
 
 @pytest.mark.usefixtures("aiida_profile_clean")
@@ -14,16 +15,16 @@ def test_submit_job(firecrest_computer: orm.Computer, tmp_path: Path):
     scheduler = FirecrestScheduler()
     scheduler.set_transport(transport)
 
-
-    with pytest.raises(Exception):
+    with pytest.raises(FileNotFoundError):
         scheduler.submit_job(transport.getcwd(), "unknown.sh")
 
     _script = Path(tmp_path / "job.sh")
     _script.write_text("#!/bin/bash\n\necho 'hello world'")
-    
+
     job_id = scheduler.submit_job(transport.getcwd(), _script)
     # this is how aiida expects the job_id to be returned
     assert isinstance(job_id, str)
+
 
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_get_jobs(firecrest_computer: orm.Computer):
@@ -31,9 +32,9 @@ def test_get_jobs(firecrest_computer: orm.Computer):
     scheduler = FirecrestScheduler()
     scheduler.set_transport(transport)
 
-    # test pagaination 
-    scheduler._DEFAULT_PAGE_SIZE = 2    
-    values._DEFAULT_PAGE_SIZE = 2
+    # test pagaination
+    scheduler._DEFAULT_PAGE_SIZE = 2
+    Values._DEFAULT_PAGE_SIZE = 2
 
     joblist = [random.randint(10000, 99999) for i in range(5)]
     result = scheduler.get_jobs(joblist)
@@ -41,11 +42,10 @@ def test_get_jobs(firecrest_computer: orm.Computer):
     for i in range(5):
         assert result[i].job_id == str(joblist[i])
         # TODO: one could check states as well
-    
 
 
 def test_write_script_full():
-    # to avoid false positive (overwriting on existing file), 
+    # to avoid false positive (overwriting on existing file),
     # we check the output of the script instead of using `file_regression``
     expectaion = """
     #!/bin/bash
@@ -69,7 +69,9 @@ def test_write_script_full():
     #SBATCH --mem=1
     test_command
     """
-    expectaion_flat = '\n'.join(line.strip() for line in expectaion.splitlines()).strip('\n')
+    expectaion_flat = "\n".join(line.strip() for line in expectaion.splitlines()).strip(
+        "\n"
+    )
     scheduler = FirecrestScheduler()
     template = JobTemplate(
         {
@@ -105,7 +107,7 @@ def test_write_script_full():
 
 
 def test_write_script_minimal():
-    # to avoid false positive (overwriting on existing file), 
+    # to avoid false positive (overwriting on existing file),
     # we check the output of the script instead of using `file_regression``
     expectaion = """
     #!/bin/bash
@@ -114,8 +116,10 @@ def test_write_script_minimal():
     #SBATCH --nodes=1
     #SBATCH --ntasks-per-node=1
     """
-    
-    expectaion_flat = '\n'.join(line.strip() for line in expectaion.splitlines()).strip('\n')
+
+    expectaion_flat = "\n".join(line.strip() for line in expectaion.splitlines()).strip(
+        "\n"
+    )
     scheduler = FirecrestScheduler()
     template = JobTemplate(
         {

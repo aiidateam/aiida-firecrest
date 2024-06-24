@@ -211,4 +211,4 @@ These set of test do not gurantee that the firecrest protocol is working, but it
 
 
 If these tests, pass and still you have trouble in real deploymeny that means your installed version of pyfirecrest is behaving differently from what `aiida-firecrest` expects in `MockFirecrest` in `tests/tests_mocking_pyfirecrest/conftest.py`.
-In order to solve that, first spot what is different and then solve or raise to `pyfirecrest` if relevant. 
+In order to solve that, first spot what is different and then solve or raise to `pyfirecrest` if relevant.

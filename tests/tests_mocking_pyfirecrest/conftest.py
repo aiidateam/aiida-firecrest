@@ -1,15 +1,17 @@
+import hashlib
+import os
 from pathlib import Path
-import os, stat
-import random, hashlib
-import firecrest.path
-import firecrest 
-
-import pytest
+import random
+import stat
+from typing import Optional
 
 from aiida import orm
+import firecrest
+import firecrest.path
+import pytest
 
 
-class values:
+class Values:
     _DEFAULT_PAGE_SIZE: int = 25
 
 
@@ -41,16 +43,15 @@ def _firecrest_computer(myfirecrest, tmpdir: Path):
     computer.set_minimum_job_poll_interval(5)
     computer.set_default_mpiprocs_per_machine(1)
     computer.configure(
-        url=' https://URI',
-        token_uri='https://TOKEN_URI',
-        client_id='CLIENT_ID',
+        url=" https://URI",
+        token_uri="https://TOKEN_URI",
+        client_id="CLIENT_ID",
         client_secret=str(_secret_path),
-        client_machine='MACHINE_NAME',
+        client_machine="MACHINE_NAME",
         small_file_size_mb=1.0,
         temp_directory=str(_temp_directory),
     )
     return computer
-
 
 
 class MockFirecrest:
@@ -81,56 +82,86 @@ class MockClientCredentialsAuth:
         self.args = args
         self.kwargs = kwargs
 
+
 @pytest.fixture(scope="function")
 def myfirecrest(
     pytestconfig: pytest.Config,
     monkeypatch,
 ):
-
     monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
     monkeypatch.setattr(firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth)
 
-def submit(machine: str, script_str: str = None, script_remote_path: str = None, script_local_path: str = None, local_file=False):
+
+def submit(
+    machine: str,
+    script_str: Optional[str] = None,
+    script_remote_path: Optional[str] = None,
+    script_local_path: Optional[str] = None,
+    local_file=False,
+):
+    if local_file:
+        raise DeprecationWarning("local_file is not supported")
+
     if script_remote_path and not Path(script_remote_path).exists():
         raise FileNotFoundError(f"File {script_remote_path} does not exist")
-    job_id = random.randint(10000, 99999) 
+    job_id = random.randint(10000, 99999)
     return {"jobid": job_id}
+
 
 def poll_active(machine: str, jobs: list[str], page_number: int = 0):
     response = []
     # 12 satets are defined in firecrest
-    states = ["TIMEOUT", "SUSPENDED", "PREEMPTED", "CANCELLED", "NODE_FAIL",
-     "PENDING", "FAILED", "RUNNING", "CONFIGURING", "QUEUED", "COMPLETED", "COMPLETING"]
+    states = [
+        "TIMEOUT",
+        "SUSPENDED",
+        "PREEMPTED",
+        "CANCELLED",
+        "NODE_FAIL",
+        "PENDING",
+        "FAILED",
+        "RUNNING",
+        "CONFIGURING",
+        "QUEUED",
+        "COMPLETED",
+        "COMPLETING",
+    ]
     for i in range(len(jobs)):
         response.append(
             {
-                'job_data_err': '', 
-                'job_data_out': '', 
-                'job_file': 'somefile.sh', 
-                'job_file_err': 'somefile-stderr.txt', 
-                'job_file_out': 'somefile-stdout.txt', 
-                'job_info_extra': 'Job info returned successfully', 
-                'jobid': f'{jobs[i]}', 
-                'name': 'aiida-45', 
-                'nodelist': 'nid00049', 
-                'nodes': '1', 
-                'partition': 'normal', 
-                'start_time': '0:03', 
-                'state': states[i%12],
-                'time': '2024-06-21T10:44:42', 
-                'time_left': '29:57', 
-                'user': 'Prof. Wang'
-            }            
+                "job_data_err": "",
+                "job_data_out": "",
+                "job_file": "somefile.sh",
+                "job_file_err": "somefile-stderr.txt",
+                "job_file_out": "somefile-stdout.txt",
+                "job_info_extra": "Job info returned successfully",
+                "jobid": f"{jobs[i]}",
+                "name": "aiida-45",
+                "nodelist": "nid00049",
+                "nodes": "1",
+                "partition": "normal",
+                "start_time": "0:03",
+                "state": states[i % 12],
+                "time": "2024-06-21T10:44:42",
+                "time_left": "29:57",
+                "user": "Prof. Wang",
+            }
         )
-    
-    return response[page_number*values._DEFAULT_PAGE_SIZE:(page_number+1)*values._DEFAULT_PAGE_SIZE]
+
+    return response[
+        page_number
+        * Values._DEFAULT_PAGE_SIZE : (page_number + 1)
+        * Values._DEFAULT_PAGE_SIZE
+    ]
+
 
 def whomai(machine: str):
     assert machine == "MACHINE_NAME"
     return "test_user"
 
+
 def list_files(
-    machine: str, target_path: str, recursive: bool = False, show_hidden: bool = False):
+    machine: str, target_path: str, recursive: bool = False, show_hidden: bool = False
+):
     # this is mimiking the expected behaviour from the firecrest code.
 
     content_list = []
@@ -139,33 +170,42 @@ def list_files(
             continue
         for name in dirs + files:
             full_path = os.path.join(root, name)
-            relative_path = Path(os.path.relpath(root, target_path)).joinpath(name).as_posix()
+            relative_path = (
+                Path(os.path.relpath(root, target_path)).joinpath(name).as_posix()
+            )
             if os.path.islink(full_path):
-                content_type = 'l'
-                link_target = os.readlink(full_path) if os.path.islink(full_path) else None
+                content_type = "l"
+                link_target = (
+                    os.readlink(full_path) if os.path.islink(full_path) else None
+                )
             elif os.path.isfile(full_path):
-                content_type = '-'
+                content_type = "-"
                 link_target = None
             elif os.path.isdir(full_path):
-                content_type = 'd'
+                content_type = "d"
                 link_target = None
             else:
-                content_type = 'NON'
+                content_type = "NON"
                 link_target = None
-            permissions = stat.filemode(Path(full_path).lstat().st_mode)[1:] 
-            if name.startswith('.') and not show_hidden:
+            permissions = stat.filemode(Path(full_path).lstat().st_mode)[1:]
+            if name.startswith(".") and not show_hidden:
                 continue
-            content_list.append({
-                'name': relative_path,
-                'type': content_type,
-                'link_target': link_target,
-                'permissions': permissions,
-            })
+            content_list.append(
+                {
+                    "name": relative_path,
+                    "type": content_type,
+                    "link_target": link_target,
+                    "permissions": permissions,
+                }
+            )
 
     return content_list
 
-def stat_(machine:str, targetpath: firecrest.path, dereference=True):
-    stats = os.stat(targetpath, follow_symlinks= True if dereference else False)
+
+def stat_(machine: str, targetpath: firecrest.path, dereference=True):
+    stats = os.stat(
+        targetpath, follow_symlinks=bool(dereference) if dereference else False
+    )
     return {
         "ino": stats.st_ino,
         "dev": stats.st_dev,
@@ -178,11 +218,13 @@ def stat_(machine:str, targetpath: firecrest.path, dereference=True):
         "ctime": stats.st_ctime,
     }
 
+
 def mkdir(machine: str, target_path: str, p: bool = False):
     if p:
         os.makedirs(target_path)
     else:
         os.mkdir(target_path)
+
 
 def simple_delete(machine: str, target_path: str):
     if not Path(target_path).exists():
@@ -192,9 +234,11 @@ def simple_delete(machine: str, target_path: str):
     else:
         os.remove(target_path)
 
+
 def symlink(machine: str, target_path: str, link_path: str):
     # this is how firecrest does it
     os.system(f"ln -s {target_path}  {link_path}")
+
 
 def simple_download(machine: str, remote_path: str, local_path: str):
     # this procedure is complecated in firecrest, but I am simplifying it here
@@ -206,7 +250,10 @@ def simple_download(machine: str, remote_path: str, local_path: str):
         raise FileNotFoundError(f"{remote_path} does not exist")
     os.system(f"cp {remote_path} {local_path}")
 
-def simple_upload(machine: str, local_path: str, remote_path: str, file_name: str = None):
+
+def simple_upload(
+    machine: str, local_path: str, remote_path: str, file_name: Optional[str] = None
+):
     # this procedure is complecated in firecrest, but I am simplifying it here
     # we don't care about the details of the upload, we just want to make sure
     # that the aiida-firecrest code is calling the right functions at right time
@@ -216,14 +263,18 @@ def simple_upload(machine: str, local_path: str, remote_path: str, file_name: st
         raise FileNotFoundError(f"{local_path} does not exist")
     if file_name:
         remote_path = os.path.join(remote_path, file_name)
-    os.system(f"cp {local_path} {remote_path}")    
+    os.system(f"cp {local_path} {remote_path}")
+
 
 def copy(machine: str, source_path: str, target_path: str):
     # this is how firecrest does it
-    # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/utilities/utilities.py#L451C1-L452C1    
+    # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/utilities/utilities.py#L451C1-L452C1
     os.system(f"cp --force -dR --preserve=all -- '{source_path}' '{target_path}'")
 
-def compress(machine: str, source_path: str, target_path: str, dereference: bool = True):
+
+def compress(
+    machine: str, source_path: str, target_path: str, dereference: bool = True
+):
     # this is how firecrest does it
     # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/utilities/utilities.py#L460
     basedir = os.path.dirname(source_path)
@@ -231,90 +282,88 @@ def compress(machine: str, source_path: str, target_path: str, dereference: bool
     deref = "--dereference" if dereference else ""
     os.system(f"tar {deref} -czf '{target_path}' -C '{basedir}' '{file_path}'")
 
+
 def extract(machine: str, source_path: str, target_path: str):
     # this is how firecrest does it
     # https://github.com/eth-cscs/firecrest/blob/db6ba4ba273c11a79ecbe940872f19d5cb19ac5e/src/common/cscs_api_common.py#L1110C18-L1110C65
     os.system(f"tar -xf '{source_path}' -C '{target_path}'")
+
 
 def checksum(machine: str, remote_path: str) -> int:
     if not remote_path.exists():
         return False
     # Firecrest uses sha256
     sha256_hash = hashlib.sha256()
-    with open(remote_path,"rb") as f:
-        for byte_block in iter(lambda: f.read(4096),b""):
+    with open(remote_path, "rb") as f:
+        for byte_block in iter(lambda: f.read(4096), b""):
             sha256_hash.update(byte_block)
 
     return sha256_hash.hexdigest()
 
+
 def parameters():
     # note: I took this from https://firecrest-tds.cscs.ch/ or https://firecrest.cscs.ch/
-    # if code is not working but test passes, it means you need to update this dictionary 
+    # if code is not working but test passes, it means you need to update this dictionary
     # with the latest FirecREST parameters
     return {
         "compute": [
-        {
-            "description": "Type of resource and workload manager used in compute microservice",
-            "name": "WORKLOAD_MANAGER",
-            "unit": "",
-            "value": "Slurm"
-        }
+            {
+                "description": "Type of resource and workload manager used in compute microservice",
+                "name": "WORKLOAD_MANAGER",
+                "unit": "",
+                "value": "Slurm",
+            }
         ],
         "storage": [
-        {
-            "description": "Type of object storage, like `swift`, `s3v2` or `s3v4`.",
-            "name": "OBJECT_STORAGE",
-            "unit": "",
-            "value": "s3v4"
-        },
-        {
-            "description": "Expiration time for temp URLs.",
-            "name": "STORAGE_TEMPURL_EXP_TIME",
-            "unit": "seconds",
-            "value": "86400"
-        },
-        {
-            "description": "Maximum file size for temp URLs.",
-            "name": "STORAGE_MAX_FILE_SIZE",
-            "unit": "MB",
-            "value": "5120"
-        },
-        {
-            "description": "Available filesystems through the API.",
-            "name": "FILESYSTEMS",
-            "unit": "",
-            "value": [
             {
-                "mounted": [
-                "/project",
-                "/store",
-                "/scratch/snx3000tds"
-                ],
-                "system": "dom"
+                "description": "Type of object storage, like `swift`, `s3v2` or `s3v4`.",
+                "name": "OBJECT_STORAGE",
+                "unit": "",
+                "value": "s3v4",
             },
             {
-                "mounted": [
-                "/project",
-                "/store",
-                "/capstor/scratch/cscs"
+                "description": "Expiration time for temp URLs.",
+                "name": "STORAGE_TEMPURL_EXP_TIME",
+                "unit": "seconds",
+                "value": "86400",
+            },
+            {
+                "description": "Maximum file size for temp URLs.",
+                "name": "STORAGE_MAX_FILE_SIZE",
+                "unit": "MB",
+                "value": "5120",
+            },
+            {
+                "description": "Available filesystems through the API.",
+                "name": "FILESYSTEMS",
+                "unit": "",
+                "value": [
+                    {
+                        "mounted": ["/project", "/store", "/scratch/snx3000tds"],
+                        "system": "dom",
+                    },
+                    {
+                        "mounted": ["/project", "/store", "/capstor/scratch/cscs"],
+                        "system": "pilatus",
+                    },
                 ],
-                "system": "pilatus"
-            }
-            ]
-        }
+            },
         ],
         "utilities": [
-        {
-            "description": "The maximum allowable file size for various operations of the utilities microservice",
-            "name": "UTILITIES_MAX_FILE_SIZE",
-            "unit": "MB",
-            "value": "69"
-        },
-        {
-            "description": "Maximum time duration for executing the commands in the cluster for the utilities microservice.",
-            "name": "UTILITIES_TIMEOUT",
-            "unit": "seconds",
-            "value": "5"
-        }
-        ]
+            {
+                "description": "The maximum allowable file size for various operations of the utilities microservice",
+                "name": "UTILITIES_MAX_FILE_SIZE",
+                "unit": "MB",
+                "value": "69",
+            },
+            {
+                "description": (
+                    "Maximum time duration for executing the commands "
+                    "in the cluster for the utilities microservice."
+                ),
+                "name": "UTILITIES_TIMEOUT",
+                "unit": "seconds",
+                "value": "5",
+            },
+        ],
     }

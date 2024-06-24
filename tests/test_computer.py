@@ -41,8 +41,7 @@ def _firecrest_computer(firecrest_server: FirecrestConfig):
 def test_whoami(firecrest_computer: orm.Computer):
     """check if it is possible to determine the username."""
     transport = firecrest_computer.get_transport()
-    assert transport.whoami() == 'test_user'
-
+    assert transport.whoami() == "test_user"
 
 
 @pytest.mark.usefixtures("aiida_profile_clean")
