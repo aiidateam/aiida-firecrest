@@ -1,15 +1,16 @@
-from __future__ import annotations
-
 from pathlib import Path
-import os
-import stat
-import hashlib
-
-from _pytest.terminal import TerminalReporter
+import os, stat
+import random, hashlib
 import firecrest.path
-import pytest
 import firecrest 
+
+import pytest
+
 from aiida import orm
+
+
+class values:
+    _DEFAULT_PAGE_SIZE: int = 25
 
 
 @pytest.fixture(name="firecrest_computer")
@@ -57,6 +58,7 @@ class MockFirecrest:
         self._firecrest_url = firecrest_url
         self.args = args
         self.kwargs = kwargs
+
         self.whoami = whomai
         self.list_files = list_files
         self.stat = stat_
@@ -71,7 +73,7 @@ class MockFirecrest:
         self.extract = extract
         self.copy = copy
         self.submit = submit
-        # self.poll_active = poll_active
+        self.poll_active = poll_active
 
 
 class MockClientCredentialsAuth:
@@ -88,9 +90,40 @@ def myfirecrest(
     monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
     monkeypatch.setattr(firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth)
 
-# def poll_active(machine: str, job_id: str):
-def submit(machine: str, script_str: str = None, script_remote_path: str = None, script_local_path: str = None):
-    pass
+def submit(machine: str, script_str: str = None, script_remote_path: str = None, script_local_path: str = None, local_file=False):
+    if script_remote_path and not Path(script_remote_path).exists():
+        raise FileNotFoundError(f"File {script_remote_path} does not exist")
+    job_id = random.randint(10000, 99999) 
+    return {"jobid": job_id}
+
+def poll_active(machine: str, jobs: list[str], page_number: int = 0):
+    response = []
+    # 12 satets are defined in firecrest
+    states = ["TIMEOUT", "SUSPENDED", "PREEMPTED", "CANCELLED", "NODE_FAIL",
+     "PENDING", "FAILED", "RUNNING", "CONFIGURING", "QUEUED", "COMPLETED", "COMPLETING"]
+    for i in range(len(jobs)):
+        response.append(
+            {
+                'job_data_err': '', 
+                'job_data_out': '', 
+                'job_file': 'somefile.sh', 
+                'job_file_err': 'somefile-stderr.txt', 
+                'job_file_out': 'somefile-stdout.txt', 
+                'job_info_extra': 'Job info returned successfully', 
+                'jobid': f'{jobs[i]}', 
+                'name': 'aiida-45', 
+                'nodelist': 'nid00049', 
+                'nodes': '1', 
+                'partition': 'normal', 
+                'start_time': '0:03', 
+                'state': states[i%12],
+                'time': '2024-06-21T10:44:42', 
+                'time_left': '29:57', 
+                'user': 'Prof. Wang'
+            }            
+        )
+    
+    return response[page_number*values._DEFAULT_PAGE_SIZE:(page_number+1)*values._DEFAULT_PAGE_SIZE]
 
 def whomai(machine: str):
     assert machine == "MACHINE_NAME"

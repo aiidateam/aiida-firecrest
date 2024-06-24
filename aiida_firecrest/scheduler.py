@@ -10,6 +10,8 @@ from aiida.schedulers import Scheduler, SchedulerError
 from aiida.schedulers.datastructures import JobInfo, JobState, JobTemplate
 from aiida.schedulers.plugins.slurm import SlurmJobResource
 from firecrest.FirecrestException import FirecrestException
+from aiida.schedulers.plugins.slurm import _TIME_REGEXP
+import datetime, time
 
 from .utils import convert_header_exceptions
 
@@ -197,8 +199,7 @@ class FirecrestScheduler(Scheduler):
             try:
                 result = transport._client.submit(
                     transport._machine,
-                    transport._get_path(working_directory, filename),
-                    local_file=False,
+                    script_remote_path = transport._get_path(working_directory, filename),
                 )
             except FirecrestException as exc:
                 raise SchedulerError(str(exc)) from exc
@@ -214,11 +215,11 @@ class FirecrestScheduler(Scheduler):
         transport = self.transport
         with convert_header_exceptions({"machine": transport._machine}):
             # TODO handle pagination (pageSize, pageNumber) if many jobs
-            # This will do pagination, not manually tested becasue the server is damn slow.
+            # This will do pagination
             try:
                 for page_iter in itertools.count():
                     results += transport._client.poll_active(transport._machine, jobs, page_number=page_iter)
-                    if len(results) < self._DEFAULT_PAGE_SIZE:
+                    if len(results) < self._DEFAULT_PAGE_SIZE*(page_iter+1):
                         break
             except FirecrestException as exc:
                 raise SchedulerError(str(exc)) from exc
@@ -301,31 +302,31 @@ class FirecrestScheduler(Scheduler):
 
             this_job.queue_name = raw_result["partition"]
 
-            # TODO: The block below is commented, because the time limit is not returned explicitly by the FirecREST server
-            # in any case, the time tags doesn't seem to be used by AiiDA anyway.
-            # try:
-            #     walltime = (self._convert_time(raw_result['time_limit']))
-            #     this_job.requested_wallclock_time_seconds = walltime  # pylint: disable=invalid-name
-            # except ValueError:
-            #     self.logger.warning(f'Error parsing the time limit for job id {this_job.job_id}')
+            try:
+                walltime = (self._convert_time(raw_result['time_left']) + self._convert_time(raw_result['start_time']) )
+                this_job.requested_wallclock_time_seconds = walltime  # pylint: disable=invalid-name
+            except ValueError:
+                self.logger.warning(f'Error parsing the time limit for job id {this_job.job_id}')
 
             # Only if it is RUNNING; otherwise it is not meaningful,
             # and may be not set (in my test, it is set to zero)
-            # if this_job.job_state == JobState.RUNNING:
-            #     try:
-            #         this_job.wallclock_time_seconds = (self._convert_time(thisjob_dict['time_used']))
-            #     except ValueError:
-            #         self.logger.warning(f'Error parsing time_used for job id {this_job.job_id}')
+            if this_job.job_state == JobState.RUNNING:
+                try:
+                    this_job.wallclock_time_seconds = self._convert_time(raw_result['start_time'])
+                except ValueError:
+                    self.logger.warning(f'Error parsing time_used for job id {this_job.job_id}')
 
+            # TODO: The block below is commented, because dispatch_time is not returned explicitly by the FirecREST server
+            # in any case, the time tags doesn't seem to be used by AiiDA anyway.
             #     try:
             #         this_job.dispatch_time = self._parse_time_string(thisjob_dict['dispatch_time'])
             #     except ValueError:
             #         self.logger.warning(f'Error parsing dispatch_time for job id {this_job.job_id}')
 
-            # try:
-            #     this_job.submission_time = self._parse_time_string(thisjob_dict['submission_time'])
-            # except ValueError:
-            #     self.logger.warning(f'Error parsing submission_time for job id {this_job.job_id}')
+            try:
+                this_job.submission_time = self._parse_time_string(raw_result['time'])
+            except ValueError:
+                self.logger.warning(f'Error parsing submission_time for job id {this_job.job_id}')
 
             this_job.title = raw_result["name"]
 
@@ -361,6 +362,52 @@ class FirecrestScheduler(Scheduler):
         with convert_header_exceptions({"machine": transport._machine}):
             transport._client.cancel(transport._machine, jobid)
         return True
+
+
+
+
+    def _convert_time(self, string):
+        """
+        Note: this function was copied from the Slurm scheduler plugin
+        Convert a string in the format DD-HH:MM:SS to a number of seconds.
+        """
+        if string == 'UNLIMITED':
+            return 2147483647  # == 2**31 - 1, largest 32-bit signed integer (68 years)
+
+        if string == 'NOT_SET':
+            return None
+
+        groups = _TIME_REGEXP.match(string)
+        if groups is None:
+            raise ValueError('Unrecognized format for time string.')
+
+        groupdict = groups.groupdict()
+        # should not raise a ValueError, they all match digits only
+        days = int(groupdict['days'] if groupdict['days'] is not None else 0)
+        hours = int(groupdict['hours'] if groupdict['hours'] is not None else 0)
+        mins = int(groupdict['minutes'] if groupdict['minutes'] is not None else 0)
+        secs = int(groupdict['seconds'] if groupdict['seconds'] is not None else 0)
+
+        return days * 86400 + hours * 3600 + mins * 60 + secs
+
+
+    def _parse_time_string(self, string, fmt='%Y-%m-%dT%H:%M:%S'):
+        """
+        Note: this function was copied from the Slurm scheduler plugin
+        Parse a time string in the format returned from qstat -f and
+        returns a datetime object.
+        """
+
+        try:
+            time_struct = time.strptime(string, fmt)
+        except Exception as exc:
+            self.logger.debug(f'Unable to parse time string {string}, the message was {exc}')
+            raise ValueError('Problem parsing the time string.')
+
+        # I convert from a time_struct to a datetime object going through
+        # the seconds since epoch, as suggested on stackoverflow:
+        # http://stackoverflow.com/questions/1697815
+        return datetime.datetime.fromtimestamp(time.mktime(time_struct))
 
 
 

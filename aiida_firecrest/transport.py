@@ -5,18 +5,14 @@ import fnmatch
 import hashlib
 import os
 from pathlib import Path
-import platform
 import posixpath
-import shutil
 import tarfile
 import time
 from typing import Any, Callable, ClassVar, TypedDict
-from urllib import request
 import uuid
 
 from aiida.cmdline.params.options.overridable import OverridableOption
 from aiida.transports import Transport
-from aiida.transports.transport import validate_positive_number
 from aiida.transports.util import FileAttribute
 from click.types import ParamType
 from firecrest import ClientCredentialsAuth, Firecrest  # type: ignore[attr-defined]
@@ -273,8 +269,6 @@ class FirecrestTransport(Transport):
         :param kwargs: Additional keyword arguments
         """
         
-
-        print("this is being done with firecrest transport")
 
         # there is no overhead for "opening" a connection to a REST-API,
         # but still allow the user to set a safe interval if they really want to
@@ -818,8 +812,6 @@ class FirecrestTransport(Transport):
         # this function will be used to send a folder as a tar file to the server and extract it on the server
 
 
-        import tarfile
-        import uuid
         _ = uuid.uuid4()
 
         localpath = Path(localpath)
