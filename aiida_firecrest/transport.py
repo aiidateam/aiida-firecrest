@@ -502,9 +502,20 @@ class FirecrestTransport(Transport):
         if not destination.exists() and not source.is_file():
             raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
-        source.copy_to(destination)
+        self._copy_to(source, destination)
         # I removed symlink copy, becasue it's really not a file copy, it's a link copy
         # and aiida-ssh have it in buggy manner, prrobably it's not used anyways
+
+    def _copy_to(self, source: FcPath, target: FcPath) -> None:
+        """Copy source path to the target path. Both paths must be on remote.
+
+        Works for both files and directories (in which case the whole tree is copied).
+        """
+        with self._cwd.convert_header_exceptions():
+            # Note although this endpoint states that it is only for directories,
+            # it actually uses `cp -r`:
+            # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L320
+            self._client.copy(self._machine, str(source), str(target))
 
     def copytree(
         self, remotesource: str, remotedestination: str, dereference: bool = False
@@ -532,7 +543,7 @@ class FirecrestTransport(Transport):
         if not destination.exists():
             raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
-        source.copy_to(destination)
+        self._copy_to(source, destination)
 
     def copy(
         self,
@@ -570,7 +581,7 @@ class FirecrestTransport(Transport):
         if not destination.exists() and not source.is_file():
             raise FileNotFoundError(f"Destination does not exist: {destination}")
 
-        source.copy_to(destination)
+        self._copy_to(source, destination)
 
     # TODO do get/put methods need to handle glob patterns?
     # Apparently not, but I'm not clear how glob() iglob() are going to behave here. We may need to implement them.
