@@ -341,9 +341,18 @@ class FirecrestTransport(Transport):
         self._cwd: FcPath = FcPath(self._client, self._machine, "/", cache_enabled=True)
         self._temp_directory = self._cwd.joinpath(temp_directory)
 
+        # this makes no sense for firecrest, but we need to set this to True
+        # otherwise the aiida-core will complain that the transport is not open:
+        # aiida-core/src/aiida/orm/utils/remote:clean_remote()
+        self._is_open = True
+
     def __str__(self) -> str:
         """Return the name of the plugin."""
         return self.__class__.__name__
+
+    @property
+    def is_open(self) -> bool:
+        return self._is_open
 
     @property
     def payoff_override(self) -> bool | None:
@@ -895,7 +904,12 @@ class FirecrestTransport(Transport):
         if self.payoff_override is not None:
             return bool(self.payoff_override)
 
-        if len(self.listdir(str(path), recursive=True)) > 3:
+        if (
+            isinstance(path, FcPath)
+            and len(self.listdir(str(path), recursive=True)) > 3
+        ):
+            return True
+        if isinstance(path, Path) and len(os.listdir(path)) > 3:
             return True
         return False
 
@@ -1070,6 +1084,7 @@ class FirecrestTransport(Transport):
         """Not possible for REST-API.
         It's here only because it's an abstract method in the base class."""
         # TODO remove from interface
+        print(f"Trying to go for {remotedir}")
         raise NotImplementedError("firecrest does not support gotocomputer_command")
 
     def _exec_command_internal(self, command: str, **kwargs: Any) -> Any:

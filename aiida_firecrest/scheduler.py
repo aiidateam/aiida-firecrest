@@ -319,7 +319,7 @@ class FirecrestScheduler(Scheduler):
 
             except ValueError:
                 self.logger.warning(
-                    f"Error parsing the time limit for job id {this_job.job_id}"
+                    f"Couldn't parse the time limit for job id {this_job.job_id}"
                 )
 
             # Only if it is RUNNING; otherwise it is not meaningful,
@@ -335,7 +335,7 @@ class FirecrestScheduler(Scheduler):
                         this_job.wallclock_time_seconds = 0
                 except ValueError:
                     self.logger.warning(
-                        f"Error parsing time_used for job id {this_job.job_id}"
+                        f"Couldn't parse time_used for job id {this_job.job_id}"
                     )
 
             # TODO: The block below is commented, because dispatch_time
@@ -350,7 +350,7 @@ class FirecrestScheduler(Scheduler):
                 this_job.submission_time = self._parse_time_string(raw_result["time"])
             except ValueError:
                 self.logger.warning(
-                    f"Error parsing submission_time for job id {this_job.job_id}"
+                    f"Couldn't parse submission_time for job id {this_job.job_id}"
                 )
 
             this_job.title = raw_result["name"]
