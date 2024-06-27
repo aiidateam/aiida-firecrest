@@ -213,6 +213,7 @@ class FirecrestScheduler(Scheduler):
     ) -> list[JobInfo] | dict[str, JobInfo]:
         results = []
         transport = self.transport
+
         with convert_header_exceptions({"machine": transport._machine}):
             # TODO handle pagination (pageSize, pageNumber) if many jobs
             # This will do pagination
@@ -224,7 +225,10 @@ class FirecrestScheduler(Scheduler):
                     if len(results) < self._DEFAULT_PAGE_SIZE * (page_iter + 1):
                         break
             except FirecrestException as exc:
-                raise SchedulerError(str(exc)) from exc
+                # firecrest returns error if the job is completed
+                # TODO: check what type of error is returned and handle it properly
+                if "Invalid job id specified" not in str(exc):
+                    raise SchedulerError(str(exc)) from exc
         job_list = []
         for raw_result in results:
             # TODO: probably the if below is not needed, because recently

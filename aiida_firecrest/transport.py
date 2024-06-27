@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import posixpath
 import tarfile
-import time
 from typing import Any, Callable, ClassVar, TypedDict
 import uuid
 
@@ -441,6 +440,9 @@ class FirecrestTransport(Transport):
     ) -> list[str]:
         """List the contents of a directory.
 
+        :param path: this could be relative or absolute path.
+            Note igolb() will usually call this with relative path.
+
         :param pattern: Unix shell-style wildcards to match the pattern:
             - `*` matches everything
             - `?` matches any single character
@@ -448,9 +450,10 @@ class FirecrestTransport(Transport):
             - `[!seq]` matches any character not in seq
         :param recursive: If True, list directories recursively
         """
+        path_abs = self._cwd.joinpath(path)
         names = [
-            p.relpath(path).as_posix()
-            for p in self._cwd.joinpath(path).iterdir(recursive=recursive)
+            p.relpath(path_abs).as_posix()
+            for p in path_abs.iterdir(recursive=recursive)
         ]
         if pattern is not None:
             names = fnmatch.filter(names, pattern)
@@ -609,7 +612,6 @@ class FirecrestTransport(Transport):
             note: we don't support downloading symlinks, so dereference should always be True
 
         """
-
         if not dereference:
             raise NotImplementedError(
                 "Getting symlinks with `dereference=False` is not supported"
@@ -705,25 +707,12 @@ class FirecrestTransport(Transport):
             note: FirecREST doesn't support `--dereference` for tar call,
             so dereference should always be False, for now.
         """
-        # TODO manual testing the submit behaviour
 
-        # if dereference:
-        #     raise NotImplementedError("Dereferencing compression not implemented in pyFirecREST.")
-
-        _ = uuid.uuid4()  # Attempt direct compress
+        _ = uuid.uuid4()
         remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
-        try:
-            self._client.compress(self._machine, str(remotepath), remote_path_temp)
-        except Exception as e:
-            # TODO: pyfirecrest is providing a solution to this, but it's not yet merged.
-            # once done submit_compress_job should be done automaticaly by compress
-            # see: https://github.com/eth-cscs/pyfirecrest/pull/109
-            raise NotImplementedError("Not implemeted for now") from e
-            comp_obj = self._client.submit_compress_job(
-                self._machine, str(remotepath), remote_path_temp
-            )
-            while comp_obj.in_progress:
-                time.sleep(self._file_transfer_poll_interval)
+
+        # Compress
+        self._client.compress(self._machine, str(remotepath), remote_path_temp)
 
         # Download
         localpath_temp = Path(localpath).joinpath(f"temp_{_}.tar")
@@ -756,6 +745,7 @@ class FirecrestTransport(Transport):
         :param dereference: If True, follow symlinks.
             note: dereference should be always True, otherwise the symlinks will not be functional.
         """
+
         local = Path(localpath)
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
@@ -947,19 +937,10 @@ class FirecrestTransport(Transport):
             self.putfile(tarpath, remote_path_temp)
         finally:
             tarpath.unlink()
-        # Attempt direct extract
+
+        # Attempt extract
         try:
             self._client.extract(self._machine, remote_path_temp, str(remotepath))
-        except Exception as e:
-            # TODO: pyfirecrest is providing a solution to this, but it's not yet merged
-            # once done submit_compress_job should be done automaticaly by compress
-            # see: https://github.com/eth-cscs/pyfirecrest/pull/109
-            raise NotImplementedError("Not implemeted for now") from e
-            comp_obj = self._client.submit_extract_job(
-                self._machine, remotepath.joinpath(f"_{_}.tar"), str(remotepath)
-            )
-            while comp_obj.in_progress:
-                time.sleep(self._file_transfer_poll_interval)
         finally:
             self.remove(remote_path_temp)
 
