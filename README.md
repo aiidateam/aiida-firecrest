@@ -65,7 +65,7 @@ $ verdi -p quicksetup computer configure firecrest firecrest-client
 Report: enter ? for help.
 Report: enter ! to ignore the default and set no value.
 Server URL: https://firecrest.cscs.ch
-Token URI: https://auth.cscs.ch/auth/realms/cscs/protocol/openid-connect/token
+Token URI: https://auth.cscs.ch/auth/realms/firecrest-clients/protocol/openid-connect/token
 Client ID: username-client
 Client Secret: xyz
 Client Machine: daint
