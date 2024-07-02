@@ -1,4 +1,5 @@
 """Transport interface."""
+
 from __future__ import annotations
 
 import fnmatch
@@ -26,7 +27,9 @@ class ValidAuthOption(TypedDict, total=False):
     switch: bool  # whether the option is a boolean flag
     type: type[Any] | ParamType
     default: Any
-    non_interactive_default: bool  # whether option should provide a default in non-interactive mode
+    non_interactive_default: (
+        bool  # whether option should provide a default in non-interactive mode
+    )
     prompt: str  # for interactive CLI
     help: str
     callback: Callable[..., Any]  # for validation

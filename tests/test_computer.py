@@ -1,6 +1,7 @@
 """Tests for setting up an AiiDA computer for Firecrest,
 and basic functionality of the Firecrest transport and scheduler plugins.
 """
+
 from pathlib import Path
 
 from aiida import orm

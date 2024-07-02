@@ -1,4 +1,5 @@
 """Test for running calculations on a FireCREST computer."""
+
 from pathlib import Path
 
 from aiida import common, engine, manage, orm
