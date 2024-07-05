@@ -581,6 +581,19 @@ class FirecrestTransport(Transport):
             raise NotImplementedError(
                 "Dereferencing not implemented in FirecREST server"
             )
+
+        if self.has_magic(remotesource):  # type: ignore
+            for item in self.iglob(remotesource):  # type: ignore
+                # item is of str type, so we need to split it to get the file name
+                filename = item.split("/")[-1] if self.isfile(item) else ""
+                self.copy(
+                    item,
+                    remotedestination + filename,
+                    dereference=dereference,
+                    recursive=recursive,
+                )
+            return
+
         source = self._cwd.joinpath(
             remotesource
         )  # .enable_cache() it's removed from from path.py to be investigated
@@ -820,6 +833,17 @@ class FirecrestTransport(Transport):
             self.gettree(remote, localpath)
         elif remote.is_file():
             self.getfile(remote, localpath)
+        elif self.has_magic(remotepath):  # type: ignore
+            for item in self.iglob(remotepath):  # type: ignore
+                # item is of str type, so we need to split it to get the file name
+                filename = item.split("/")[-1] if self.isfile(item) else ""
+                self.get(
+                    item,
+                    localpath + filename,
+                    dereference=dereference,
+                    ignore_nonexisting=ignore_nonexisting,
+                )
+            return
         elif not ignore_nonexisting:
             raise FileNotFoundError(f"Source file does not exist: {remote}")
 
@@ -1021,6 +1045,19 @@ class FirecrestTransport(Transport):
         local = Path(localpath)
         if not local.is_absolute():
             raise ValueError("The localpath must be an absolute path")
+
+        if self.has_magic(localpath):  # type: ignore
+            for item in self.iglob(localpath):  # type: ignore
+                # item is of str type, so we need to split it to get the file name
+                filename = item.split("/")[-1] if self.isfile(item) else ""
+                self.put(
+                    item,
+                    remotepath + filename,
+                    dereference=dereference,
+                    ignore_nonexisting=ignore_nonexisting,
+                )
+            return
+
         if not Path(local).exists() and not ignore_nonexisting:
             raise FileNotFoundError(f"Source file does not exist: {localpath}")
 
