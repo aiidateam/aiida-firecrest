@@ -451,10 +451,7 @@ class FirecrestTransport(Transport):
         :param recursive: If True, list directories recursively
         """
         path_abs = self._cwd.joinpath(path)
-        names = [
-            p.relpath(path_abs).as_posix()
-            for p in path_abs.iterdir(recursive=recursive)
-        ]
+        names = [p.relpath(path_abs) for p in path_abs.iterdir(recursive=recursive)]
         if pattern is not None:
             names = fnmatch.filter(names, pattern)
         return names
@@ -582,7 +579,7 @@ class FirecrestTransport(Transport):
                 "Dereferencing not implemented in FirecREST server"
             )
 
-        if self.has_magic(remotesource):  # type: ignore
+        if self.has_magic(str(remotesource)):  # type: ignore
             for item in self.iglob(remotesource):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
@@ -833,7 +830,7 @@ class FirecrestTransport(Transport):
             self.gettree(remote, localpath)
         elif remote.is_file():
             self.getfile(remote, localpath)
-        elif self.has_magic(remotepath):  # type: ignore
+        elif self.has_magic(str(remotepath)):  # type: ignore
             for item in self.iglob(remotepath):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
@@ -1046,7 +1043,7 @@ class FirecrestTransport(Transport):
         if not local.is_absolute():
             raise ValueError("The localpath must be an absolute path")
 
-        if self.has_magic(localpath):  # type: ignore
+        if self.has_magic(str(localpath)):  # type: ignore
             for item in self.iglob(localpath):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
