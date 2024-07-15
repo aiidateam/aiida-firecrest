@@ -34,7 +34,7 @@ class ValidAuthOption(TypedDict, total=False):
 
 class BuggyError(Exception):
     # TODO: Remove this class when the code is stable
-    """Raised when something should absolutly not happen, but it does."""
+    """Raised when something should absolutely not happen, but it does."""
 
 
 def _create_secret_file(ctx: Context, param: InteractiveOption, value: str) -> str:
@@ -68,7 +68,7 @@ def _create_secret_file(ctx: Context, param: InteractiveOption, value: str) -> s
 def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str) -> str:
     """Validate the temp directory on the server.
     If it does not exist, create it.
-    If it is not empty, get a confimation from the user to empty it.
+    If it is not empty, get a confirmation from the user to empty it.
     """
 
     import click
@@ -90,7 +90,7 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
         small_file_size_mb=small_file_size_mb,
     )
 
-    # Temp directory rutine
+    # Temp directory routine
     if dummy._cwd.joinpath(
         dummy._temp_directory
     ).is_file():  # self._temp_directory.is_file():
@@ -111,9 +111,9 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
                 raise click.BadParameter(
                     f"Temp directory {dummy._temp_directory} is not empty"
                 )
-            # The block below could be moved to a maintanace delete function, if needed
+            # The block below could be moved to a maintenance delete function, if needed
             # else:
-            #     # There might still be some residual files in case of previous interupted connection
+            #     # There might still be some residual files in case of previous interrupted connection
             #     for item in dummy.listdir(dummy._temp_directory):
             #             # this could be replace with a proper glob later
             #             if item[:4] == 'temp':
@@ -455,7 +455,7 @@ class FirecrestTransport(Transport):
             names = fnmatch.filter(names, pattern)
         return names
 
-    # TODO the default implementations of glob / iglob could be overriden
+    # TODO the default implementations of glob / iglob could be overridden
     # to be more performant, using cached FcPaths and https://github.com/chrisjsewell/virtual-glob
 
     def makedirs(self, path: str, ignore_existing: bool = False) -> None:
@@ -1098,7 +1098,6 @@ class FirecrestTransport(Transport):
         """Not possible for REST-API.
         It's here only because it's an abstract method in the base class."""
         # TODO remove from interface
-        print(f"Trying to go for {remotedir}")
         raise NotImplementedError("firecrest does not support gotocomputer_command")
 
     def _exec_command_internal(self, command: str, **kwargs: Any) -> Any:

@@ -101,7 +101,7 @@ See [tests/test_calculation.py](tests/test_calculation.py) for a working example
 
 ### Current Issues
 
-Calculations are now running successfully, however, there are still issues regarding efficency, Could be improved:
+Calculations are now running successfully, however, there are still issues regarding efficiency, Could be improved:
 
 1. Monitoring / management of API request rates could to be improved. Currently this is left up to PyFirecREST.
 
