@@ -297,7 +297,7 @@ class FirecrestTransport(Transport):
         :param url: URL to the FirecREST server
         :param token_uri: URI for retrieving FirecREST authentication tokens
         :param client_id: FirecREST client ID
-        :param client_secret: FirecREST client secret or Absolute path to an existing FirecREST Secret Key
+        :param client_secret: FirecREST client secret or str(Absolute path) to an existing FirecREST Secret Key
         :param client_machine: FirecREST machine secret
         :param small_file_size_mb: Maximum file size for direct transfer (MB)
         :param temp_directory: A temp directory on server for creating temporary files (compression, extraction, etc.)

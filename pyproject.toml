@@ -28,7 +28,6 @@ dependencies = [
     "click",
     "pyfirecrest@git+https://github.com/khsrali/pyfirecrest.git@main#egg=pyfirecrest",
     "pyyaml",
-    "requests",
 ]
 
 [project.urls]

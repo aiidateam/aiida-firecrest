@@ -290,8 +290,7 @@ class FirecrestScheduler(Scheduler):
                     )
                 )
 
-            # TODO: The block below is commented, because the number of
-            # allocated cores is not returned by the FirecREST server
+            # See issue https://github.com/aiidateam/aiida-firecrest/issues/39
             # try:
             #     this_job.num_mpiprocs = int(thisjob_dict['number_cpus'])
             # except ValueError:
@@ -342,9 +341,8 @@ class FirecrestScheduler(Scheduler):
                         f"Couldn't parse time_used for job id {this_job.job_id}"
                     )
 
-            # TODO: The block below is commented, because dispatch_time
-            # is not returned explicitly by the FirecREST server
-            # in any case, the time tags doesn't seem to be used by AiiDA anyway.
+            # dispatch_time is not returned explicitly by the FirecREST server
+            # see: https://github.com/aiidateam/aiida-firecrest/issues/40
             #     try:
             #         this_job.dispatch_time = self._parse_time_string(thisjob_dict['dispatch_time'])
             #     except ValueError:
