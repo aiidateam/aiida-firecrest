@@ -208,7 +208,7 @@ although it is of note that you can find these files directly where you your `fi
 These set of test do not gurantee that the firecrest protocol is working, but it's very useful to quickly check if `aiida-firecrest` is behaving as it's expected to do. To run just simply use `pytest`.
 
 
-If these tests, pass and still you have trouble in real deploymeny that means your installed version of pyfirecrest is behaving differently from what `aiida-firecrest` expects in `MockFirecrest` in `tests/tests_mocking_pyfirecrest/conftest.py`.
+If these tests, pass and still you have trouble in real deployment, that means your installed version of pyfirecrest is behaving differently from what `aiida-firecrest` expects in `MockFirecrest` in `tests/tests_mocking_pyfirecrest/conftest.py`.
 If there is no version of `aiida-firecrest` available that supports your `pyfirecrest` version and if down/upgrading your `pyfirecrest` to a supported version is not an option, you might try the following:
 - open an issue on the `aiida-firecrest` repository on GitHub to request supporting your version of pyfirecrest
 - if you feel up to finding the discrepancy and fixing it within `aiida-firecrest`, open a PR instead

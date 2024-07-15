@@ -287,7 +287,6 @@ class FirecrestTransport(Transport):
         client_machine: str,
         small_file_size_mb: float,
         temp_directory: str,
-        # configured: bool = True,
         # note, machine is provided by default,
         # for the hostname, but we don't use that
         # TODO ideally hostname would not be necessary on a computer
