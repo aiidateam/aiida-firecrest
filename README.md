@@ -103,7 +103,7 @@ See [tests/test_calculation.py](tests/test_calculation.py) for a working example
 
 Calculations are now running successfully, however, there are still issues regarding efficency, Could be improved:
 
-1. Monitoring / management of API request rates could to be improved. Currently it leaves it to hand of PyFirecREST.
+1. Monitoring / management of API request rates could to be improved. Currently this is left up to PyFirecREST.
 
 ## Development
 
@@ -124,7 +124,7 @@ pre-commit run --all-files
 ### Testing
 
 There are two types of tests: mocking the PyFirecREST or the FirecREST server.
-While the former is a good practice to ensure that all three (`aiida-firecrest`, FirecREST, and PyFirecREST) work flawlessly, debugging may not always be easy because it may not always be obvious which of the three is causing a bug.
+While the latter is a good practice to ensure that all three (`aiida-firecrest`, FirecREST, and PyFirecREST) work flawlessly, debugging may not always be easy because it may not always be obvious which of the three is causing a bug.
 Because of this, we have another set of tests that only verify the functionality of `aiida-firecrest` by directly mocking PyFirecREST. Maintaining the second set in `tests/tests_mocking_pyfirecrest/` is simpler because we just need to monitor the return values of PyFirecREST​. While maintaining the former is more difficult as you have to keep up with both FirecREST and PyFirecREST.
 
 
@@ -205,8 +205,13 @@ although it is of note that you can find these files directly where you your `fi
 
 #### Mocking PyFirecREST
 
-These set of test do not gurantee that the firecrest protocol is working, but it's very usefull to quickly check if `aiida-firecrest` is behaving as it's expected to do. To run just simply use `pytest`.
+These set of test do not gurantee that the firecrest protocol is working, but it's very useful to quickly check if `aiida-firecrest` is behaving as it's expected to do. To run just simply use `pytest`.
 
 
 If these tests, pass and still you have trouble in real deploymeny that means your installed version of pyfirecrest is behaving differently from what `aiida-firecrest` expects in `MockFirecrest` in `tests/tests_mocking_pyfirecrest/conftest.py`.
-In order to solve that, first spot what is different and then solve or raise to `pyfirecrest` if relevant.
+If there is no version of `aiida-firecrest` available that supports your `pyfirecrest` version and if down/upgrading your `pyfirecrest` to a supported version is not an option, you might try the following:
+- open an issue on the `aiida-firecrest` repository on GitHub to request supporting your version of pyfirecrest
+- if you feel up to finding the discrepancy and fixing it within `aiida-firecrest`, open a PR instead
+- if you think the problem is a bug in `pyfirecrest`, open an issue there
+
+Either way, make sure to report which version of `aiida-firecrest` and `pyfirecrest` you are using.
