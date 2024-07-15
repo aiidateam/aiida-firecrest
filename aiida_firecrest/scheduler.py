@@ -17,12 +17,12 @@ if TYPE_CHECKING:
     from aiida_firecrest.transport import FirecrestTransport
 
 
-class FirecrestScheduler(Scheduler):
+class FirecrestScheduler(Scheduler):  # type: ignore[misc]
     """Scheduler interface for FirecREST."""
 
     transport: FirecrestTransport
     _job_resource_class = SlurmJobResource
-    _features: ClassVar[dict[str, Any]] = {  # type: ignore[misc]
+    _features: ClassVar[dict[str, Any]] = {
         "can_query_by_user": False,
     }
     _logger = Scheduler._logger.getChild("firecrest")
@@ -223,7 +223,7 @@ class FirecrestScheduler(Scheduler):
             if user is not None and raw_result["user"] != user:
                 continue
 
-            this_job = JobInfo()  # type: ignore
+            this_job = JobInfo()
 
             this_job.job_id = raw_result["jobid"]
             this_job.annotation = ""

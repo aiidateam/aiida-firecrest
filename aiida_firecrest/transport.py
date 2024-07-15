@@ -16,7 +16,7 @@ from aiida.transports import Transport
 from aiida.transports.transport import validate_positive_number
 from aiida.transports.util import FileAttribute
 from click.types import ParamType
-from firecrest import ClientCredentialsAuth, Firecrest  # type: ignore[attr-defined]
+from firecrest import ClientCredentialsAuth, Firecrest
 
 from .remote_path import FcPath, convert_header_exceptions  # type: ignore[attr-defined]
 
@@ -32,7 +32,7 @@ class ValidAuthOption(TypedDict, total=False):
     callback: Callable[..., Any]  # for validation
 
 
-class FirecrestTransport(Transport):
+class FirecrestTransport(Transport):  # type: ignore[misc]
     """Transport interface for FirecREST."""
 
     # override these options, because they don't really make sense for a REST-API,
@@ -44,10 +44,10 @@ class FirecrestTransport(Transport):
     #   across all transport instances
     # TODO upstream issue
     # TODO also open an issue that the `verdi computer test won't work with a REST-API`
-    _common_auth_options: ClassVar[list[Any]] = []  # type: ignore[misc]
+    _common_auth_options: ClassVar[list[Any]] = []
     _DEFAULT_SAFE_OPEN_INTERVAL = 0.0
 
-    _valid_auth_options: ClassVar[list[tuple[str, ValidAuthOption]]] = [  # type: ignore[misc]
+    _valid_auth_options: ClassVar[list[tuple[str, ValidAuthOption]]] = [
         (
             "url",
             {
@@ -148,7 +148,7 @@ class FirecrestTransport(Transport):
         # there is no overhead for "opening" a connection to a REST-API,
         # but still allow the user to set a safe interval if they really want to
         kwargs.setdefault("safe_interval", 0)
-        super().__init__(**kwargs)  # type: ignore
+        super().__init__(**kwargs)
 
         assert isinstance(url, str), "url must be a string"
         assert isinstance(token_uri, str), "token_uri must be a string"
@@ -231,7 +231,7 @@ class FirecrestTransport(Transport):
 
     def get_attribute(self, path: str) -> FileAttribute:
         result = self._cwd.joinpath(path).stat()
-        return FileAttribute(  # type: ignore
+        return FileAttribute(
             {
                 "st_size": result.st_size,
                 "st_uid": result.st_uid,

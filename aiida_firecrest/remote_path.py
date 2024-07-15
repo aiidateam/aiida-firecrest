@@ -16,7 +16,7 @@ import stat
 import tempfile
 from typing import Callable, TypeVar
 
-from firecrest import ClientCredentialsAuth, Firecrest  # type: ignore[attr-defined]
+from firecrest import ClientCredentialsAuth, Firecrest
 
 from .utils import convert_header_exceptions
 
@@ -256,7 +256,7 @@ class FcPath(os.PathLike[str]):
         """Return the SHA256 (256-bit) checksum of the file."""
         # this is not part of the pathlib.Path API, but is useful
         with convert_header_exceptions({"machine": self._machine, "path": self}):
-            return self._client.checksum(self._machine, self.path)
+            return self._client.checksum(self._machine, self.path)  # type: ignore [no-any-return]
 
     # methods that utilise stat calls
 
