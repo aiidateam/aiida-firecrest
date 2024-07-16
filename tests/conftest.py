@@ -51,6 +51,7 @@ def _firecrest_computer(myfirecrest, tmpdir: Path):
         small_file_size_mb=1.0,
         temp_directory=str(_temp_directory),
     )
+    computer.store()
     return computer
 
 
@@ -105,6 +106,27 @@ def submit(
     if script_remote_path and not Path(script_remote_path).exists():
         raise FileNotFoundError(f"File {script_remote_path} does not exist")
     job_id = random.randint(10000, 99999)
+
+    # Filter out lines starting with '#SBATCH'
+    with open(script_remote_path) as file:
+        lines = file.readlines()
+    command = "".join([line for line in lines if not line.strip().startswith("#")])
+
+    # Make the dummy files
+    for line in lines:
+        if "--error" in line:
+            error_file = line.split("=")[1].strip()
+            (Path(script_remote_path).parent / error_file).touch()
+        elif "--output" in line:
+            output_file = line.split("=")[1].strip()
+            (Path(script_remote_path).parent / output_file).touch()
+
+    # Execute the job, this is useful for test_calculation.py
+    if "aiida.in" in command:
+        # skip blank command like: '/bin/bash'
+        os.chdir(Path(script_remote_path).parent)
+        os.system(command)
+
     return {"jobid": job_id}
 
 

@@ -44,5 +44,5 @@ repos:
       additional_dependencies:
       - "types-PyYAML"
       - "types-requests"
-      - "pyfirecrest~=2.5.0"
-      - "aiida-core~=2.5.1.post0"
+      - "pyfirecrest>=2.5.0" # please change to 2.6.0 when released
+      - "aiida-core>=2.6.0"  # please change to 2.6.2 when released

@@ -1,16 +1,15 @@
 # Changelog
 
-## v0.2.0 - 2024-07-15 (not released yet)
+## v0.2.0 - (not released yet)
 
 ### Transport plugin
-- `dynamic_info()` is added to retrieve machine information without user input.
 - Refactor `put` & `get` & `copy` now they mimic behavior `aiida-ssh` transport plugin.
 - `put` & `get` & `copy` now support glob patterns.
 - Added `dereference` option wherever relevant
 - Added `recursive` functionality for `listdir`
 - Added `_create_secret_file` to store user secret locally in `~/.firecrest/`
 - Added `_validate_temp_directory` to allocate a temporary directory useful for `extract` and `compress` methods on FirecREST server.
-- Added `_dynamic_info_direct_size` this is able to get info of direct transfer from the server rather than asking from users. Raise of user inputs fails to make a connection.
+- Added `_dynamic_info_direct_size` this is able to get info of direct transfer from the server rather than asking from users. Raise if fails to make a connection.
 - Added `_validate_checksum` to check integrity of downloaded/uploaded files.
 - Added `_gettreetar` & `_puttreetar` to transfer directories as tar files internally.
 - Added `payoff` function to calculate when is gainful to transfer as zip, and when to transfer individually.
