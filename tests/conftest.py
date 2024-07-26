@@ -15,8 +15,8 @@ class Values:
     _DEFAULT_PAGE_SIZE: int = 25
 
 
-@pytest.fixture(name="firecrest_computer")
-def _firecrest_computer(myfirecrest, tmpdir: Path):
+@pytest.fixture()
+def firecrest_computer(myfirecrest, tmpdir: Path):
     """Create and return a computer configured for Firecrest.
 
     Note, the computer is not stored in the database.
@@ -61,7 +61,7 @@ class MockFirecrest:
         self.args = args
         self.kwargs = kwargs
 
-        self.whoami = whomai
+        self.whoami = whoami
         self.list_files = list_files
         self.stat = stat_
         self.mkdir = mkdir
@@ -176,7 +176,7 @@ def poll_active(machine: str, jobs: list[str], page_number: int = 0):
     ]
 
 
-def whomai(machine: str):
+def whoami(machine: str):
     assert machine == "MACHINE_NAME"
     return "test_user"
 

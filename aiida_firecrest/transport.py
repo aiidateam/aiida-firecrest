@@ -32,8 +32,6 @@ class ValidAuthOption(TypedDict, total=False):
     callback: Callable[..., Any]  # for validation
 
 
-
-
 def _create_secret_file(ctx: Context, param: InteractiveOption, value: str) -> str:
     """Create a secret file if the value is not a path to a secret file.
     The path should be absolute, if it is not, the file will be created in ~/.firecrest.
@@ -77,7 +75,7 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
     secret = ctx.params["client_secret"]  # )#.read_text()
     small_file_size_mb = ctx.params["small_file_size_mb"]
 
-    dummy = FirecrestTransport(
+    _client = FirecrestTransport(
         url=firecrest_url,
         token_uri=token_uri,
         client_id=client_id,
@@ -88,40 +86,33 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
     )
 
     # Temp directory routine
-    if dummy._cwd.joinpath(
-        dummy._temp_directory
+    if _client._cwd.joinpath(
+        _client._temp_directory
     ).is_file():  # self._temp_directory.is_file():
         raise click.BadParameter("Temp directory cannot be a file")
 
-    if dummy.path_exists(dummy._temp_directory):
-        if dummy.listdir(dummy._temp_directory):
+    if _client.path_exists(_client._temp_directory):
+        if _client.listdir(_client._temp_directory):
             # if not configured:
             confirm = click.confirm(
-                f"Temp directory {dummy._temp_directory} is not empty. Do you want to flush it?"
+                f"Temp directory {_client._temp_directory} is not empty. Do you want to flush it?"
             )
             if confirm:
-                for item in dummy.listdir(dummy._temp_directory):
+                for item in _client.listdir(_client._temp_directory):
                     # TODO: maybe do recursive delete
-                    dummy.remove(dummy._temp_directory.joinpath(item))
+                    _client.remove(_client._temp_directory.joinpath(item))
             else:
                 click.echo("Please provide an empty temp directory on the server.")
                 raise click.BadParameter(
-                    f"Temp directory {dummy._temp_directory} is not empty"
+                    f"Temp directory {_client._temp_directory} is not empty"
                 )
-            # The block below could be moved to a maintenance delete function, if needed
-            # else:
-            #     # There might still be some residual files in case of previous interrupted connection
-            #     for item in dummy.listdir(dummy._temp_directory):
-            #             # this could be replace with a proper glob later
-            #             if item[:4] == 'temp':
-            #                 dummy.remove(dummy._temp_directory.joinpath(item))
 
     else:
         try:
-            dummy.mkdir(dummy._temp_directory, ignore_existing=True)
+            _client.mkdir(_client._temp_directory, ignore_existing=True)
         except Exception as e:
             raise click.BadParameter(
-                f"Could not create temp directory {dummy._temp_directory} on server: {e}"
+                f"Could not create temp directory {_client._temp_directory} on server: {e}"
             ) from e
     click.echo(
         click.style("Fireport: ", bold=True, fg="magenta")
@@ -157,7 +148,7 @@ def _dynamic_info_direct_size(
     client_machine = ctx.params["client_machine"]
     secret = ctx.params["client_secret"]  # )#.read_text()
 
-    dummy = FirecrestTransport(
+    _client = FirecrestTransport(
         url=firecrest_url,
         token_uri=token_uri,
         client_id=client_id,
@@ -167,11 +158,11 @@ def _dynamic_info_direct_size(
         small_file_size_mb=0.0,
     )
 
-    prameters = dummy._client.parameters()
+    parameters = _client._client.parameters()
     utilities_max_file_size = next(
         (
             item
-            for item in prameters["utilities"]
+            for item in parameters["utilities"]
             if item["name"] == "UTILITIES_MAX_FILE_SIZE"
         ),
         None,

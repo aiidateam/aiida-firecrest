@@ -5,9 +5,8 @@
 
 AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/), via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
 
-It is currently tested against [FirecREST v2.4.0](https://github.com/eth-cscs/firecrest/releases/tag/v2.4.0).
+It is currently tested against [FirecREST v2.6.0](https://github.com/eth-cscs/pyfirecrest/tree/v2.6.0).
 
-**NOTE:** This plugin is currently dependent on a fork of `aiida-core` from [PR #6043](https://github.com/aiidateam/aiida-core/pull/6043)
 
 ## Usage
 
@@ -70,7 +69,7 @@ Client ID: username-client
 Client Secret: xyz
 Client Machine: daint
 Maximum file size for direct transfer (MB) [5.0]:
-Temp directory on server: /scratch/something/
+Temp directory on server: /scratch/something/ # "A temp directory on user's space on the server for creating temporary files (compression, extraction, etc.)"
 Report: Configuring computer firecrest-client for user chrisj_sewell@hotmail.com.
 Success: firecrest-client successfully configured for chrisj_sewell@hotmail.com
 ```
