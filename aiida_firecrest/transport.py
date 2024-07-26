@@ -19,6 +19,7 @@ from click.core import Context
 from click.types import ParamType
 from firecrest import ClientCredentialsAuth, Firecrest  # type: ignore[attr-defined]
 from firecrest.path import FcPath
+from packaging.version import Version, parse
 
 
 class ValidAuthOption(TypedDict, total=False):
@@ -71,48 +72,48 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
     firecrest_url = ctx.params["url"]
     token_uri = ctx.params["token_uri"]
     client_id = ctx.params["client_id"]
-    client_machine = ctx.params["client_machine"]
-    secret = ctx.params["client_secret"]  # )#.read_text()
-    small_file_size_mb = ctx.params["small_file_size_mb"]
+    compute_resource = ctx.params["compute_resource"]
+    secret = ctx.params["client_secret"]
 
-    _client = FirecrestTransport(
+    transport = FirecrestTransport(
         url=firecrest_url,
         token_uri=token_uri,
         client_id=client_id,
         client_secret=secret,
-        client_machine=client_machine,
+        compute_resource=compute_resource,
         temp_directory=value,
-        small_file_size_mb=small_file_size_mb,
+        small_file_size_mb=1.0,  # small_file_size_mb is irrelevant here
+        api_version="100.0.0",  # version is irrelevant here
     )
 
     # Temp directory routine
-    if _client._cwd.joinpath(
-        _client._temp_directory
+    if transport._cwd.joinpath(
+        transport._temp_directory
     ).is_file():  # self._temp_directory.is_file():
         raise click.BadParameter("Temp directory cannot be a file")
 
-    if _client.path_exists(_client._temp_directory):
-        if _client.listdir(_client._temp_directory):
+    if transport.path_exists(transport._temp_directory):
+        if transport.listdir(transport._temp_directory):
             # if not configured:
             confirm = click.confirm(
-                f"Temp directory {_client._temp_directory} is not empty. Do you want to flush it?"
+                f"Temp directory {transport._temp_directory} is not empty. Do you want to flush it?"
             )
             if confirm:
-                for item in _client.listdir(_client._temp_directory):
+                for item in transport.listdir(transport._temp_directory):
                     # TODO: maybe do recursive delete
-                    _client.remove(_client._temp_directory.joinpath(item))
+                    transport.remove(transport._temp_directory.joinpath(item))
             else:
                 click.echo("Please provide an empty temp directory on the server.")
                 raise click.BadParameter(
-                    f"Temp directory {_client._temp_directory} is not empty"
+                    f"Temp directory {transport._temp_directory} is not empty"
                 )
 
     else:
         try:
-            _client.mkdir(_client._temp_directory, ignore_existing=True)
+            transport.mkdir(transport._temp_directory, ignore_existing=True)
         except Exception as e:
             raise click.BadParameter(
-                f"Could not create temp directory {_client._temp_directory} on server: {e}"
+                f"Could not create temp directory {transport._temp_directory} on server: {e}"
             ) from e
     click.echo(
         click.style("Fireport: ", bold=True, fg="magenta")
@@ -120,6 +121,53 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
     )
 
     return value
+
+
+def _dynamic_info_firecrest_version(
+    ctx: Context, param: InteractiveOption, value: str
+) -> str:
+    """Find the version of the FirecREST server."""
+    # note: right now, unfortunately, the version is not exposed in the API.
+    # See issue https://github.com/eth-cscs/firecrest/issues/204
+    # so here we just develope a workaround to get the version from the server
+    # basically we check if extract/compress endpoint is available
+
+    import click
+
+    if value != "0":
+        if parse(value) < parse("1.15.0"):
+            raise click.BadParameter(f"FirecREST api version {value} is not supported")
+        return value
+
+    firecrest_url = ctx.params["url"]
+    token_uri = ctx.params["token_uri"]
+    client_id = ctx.params["client_id"]
+    compute_resource = ctx.params["compute_resource"]
+    secret = ctx.params["client_secret"]
+    temp_directory = ctx.params["temp_directory"]
+
+    transport = FirecrestTransport(
+        url=firecrest_url,
+        token_uri=token_uri,
+        client_id=client_id,
+        client_secret=secret,
+        compute_resource=compute_resource,
+        temp_directory=temp_directory,
+        small_file_size_mb=0.0,
+        api_version="100.0.0",  # version is irrelevant here
+    )
+    try:
+        transport.listdir(transport._cwd.joinpath(temp_directory), recursive=True)
+        _version = "1.16.0"
+    except Exception:
+        # all sort of exceptions can be raised here, but we don't care. Since this is just a workaround
+        _version = "1.15.0"
+
+    click.echo(
+        click.style("Fireport: ", bold=True, fg="magenta")
+        + f"Deployed version of FirecREST api: v{_version}"
+    )
+    return _version
 
 
 def _dynamic_info_direct_size(
@@ -145,20 +193,22 @@ def _dynamic_info_direct_size(
     firecrest_url = ctx.params["url"]
     token_uri = ctx.params["token_uri"]
     client_id = ctx.params["client_id"]
-    client_machine = ctx.params["client_machine"]
-    secret = ctx.params["client_secret"]  # )#.read_text()
+    compute_resource = ctx.params["compute_resource"]
+    secret = ctx.params["client_secret"]
+    temp_directory = ctx.params["temp_directory"]
 
-    _client = FirecrestTransport(
+    transport = FirecrestTransport(
         url=firecrest_url,
         token_uri=token_uri,
         client_id=client_id,
         client_secret=secret,
-        client_machine=client_machine,
-        temp_directory="",
+        compute_resource=compute_resource,
+        temp_directory=temp_directory,
         small_file_size_mb=0.0,
+        api_version="100.0.0",  # version is irrelevant here
     )
 
-    parameters = _client._client.parameters()
+    parameters = transport._client.parameters()
     utilities_max_file_size = next(
         (
             item
@@ -233,12 +283,33 @@ class FirecrestTransport(Transport):
             },
         ),
         (
-            "client_machine",
+            "compute_resource",
             {
                 "type": str,
                 "non_interactive_default": False,
-                "prompt": "Client Machine",
-                "help": "FirecREST machine secret",
+                "prompt": "Compute resource (Machine)",
+                "help": "Compute resources, for example 'daint', 'eiger', etc.",
+            },
+        ),
+        (
+            "temp_directory",
+            {
+                "type": str,
+                "non_interactive_default": False,
+                "prompt": "Temp directory on server",
+                "help": "A temp directory on server for creating temporary files (compression, extraction, etc.)",
+                "callback": _validate_temp_directory,
+            },
+        ),
+        (
+            "api_version",
+            {
+                "type": str,
+                "default": "0",
+                "non_interactive_default": True,
+                "prompt": "FirecREST api version [Enter 0 to get this info from server]",
+                "help": "The version of the FirecREST api deployed on the server",
+                "callback": _dynamic_info_firecrest_version,
             },
         ),
         (
@@ -252,16 +323,6 @@ class FirecrestTransport(Transport):
                 "callback": _dynamic_info_direct_size,
             },
         ),
-        (
-            "temp_directory",
-            {
-                "type": str,
-                "non_interactive_default": False,
-                "prompt": "Temp directory on server",
-                "help": "A temp directory on server for creating temporary files (compression, extraction, etc.)",
-                "callback": _validate_temp_directory,
-            },
-        ),
     ]
 
     def __init__(
@@ -271,9 +332,10 @@ class FirecrestTransport(Transport):
         token_uri: str,
         client_id: str,
         client_secret: str,
-        client_machine: str,
-        small_file_size_mb: float,
+        compute_resource: str,
         temp_directory: str,
+        small_file_size_mb: float,
+        api_version: str,
         # note, machine is provided by default,
         # for the hostname, but we don't use that
         # TODO ideally hostname would not be necessary on a computer
@@ -285,7 +347,7 @@ class FirecrestTransport(Transport):
         :param token_uri: URI for retrieving FirecREST authentication tokens
         :param client_id: FirecREST client ID
         :param client_secret: FirecREST client secret or str(Absolute path) to an existing FirecREST Secret Key
-        :param client_machine: FirecREST machine secret
+        :param compute_resource: Compute resources, for example 'daint', 'eiger', etc.
         :param small_file_size_mb: Maximum file size for direct transfer (MB)
         :param temp_directory: A temp directory on server for creating temporary files (compression, extraction, etc.)
         :param kwargs: Additional keyword arguments
@@ -300,13 +362,14 @@ class FirecrestTransport(Transport):
         assert isinstance(token_uri, str), "token_uri must be a string"
         assert isinstance(client_id, str), "client_id must be a string"
         assert isinstance(client_secret, str), "client_secret must be a string"
-        assert isinstance(client_machine, str), "client_machine must be a string"
+        assert isinstance(compute_resource, str), "compute_resource must be a string"
         assert isinstance(temp_directory, str), "temp_directory must be a string"
+        assert isinstance(api_version, str), "api_version must be a string"
         assert isinstance(
             small_file_size_mb, float
         ), "small_file_size_mb must be a float"
 
-        self._machine = client_machine
+        self._machine = compute_resource
         self._url = url
         self._token_uri = token_uri
         self._client_id = client_id
@@ -325,6 +388,11 @@ class FirecrestTransport(Transport):
 
         self._cwd: FcPath = FcPath(self._client, self._machine, "/", cache_enabled=True)
         self._temp_directory = self._cwd.joinpath(temp_directory)
+
+        self._api_version: Version = parse(api_version)
+
+        if self._api_version < parse("1.16.0"):
+            self._payoff_override = False
 
         # this makes no sense for firecrest, but we need to set this to True
         # otherwise the aiida-core will complain that the transport is not open:
