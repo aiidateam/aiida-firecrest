@@ -47,9 +47,10 @@ def firecrest_computer(myfirecrest, tmpdir: Path):
         token_uri="https://TOKEN_URI",
         client_id="CLIENT_ID",
         client_secret=str(_secret_path),
-        client_machine="MACHINE_NAME",
+        compute_resource="MACHINE_NAME",
         small_file_size_mb=1.0,
         temp_directory=str(_temp_directory),
+        api_version="2",
     )
     computer.store()
     return computer
