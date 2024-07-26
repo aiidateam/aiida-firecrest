@@ -1,13 +1,13 @@
+from dataclasses import dataclass
+from functools import partial
 import hashlib
+import json
 import os
 from pathlib import Path
 import random
 import stat
-from typing import Optional, Any, Callable
-import json
-from functools import partial
+from typing import Any, Callable, Optional
 from urllib.parse import urlparse
-from dataclasses import dataclass
 
 from aiida import orm
 import firecrest
@@ -81,6 +81,7 @@ class MockClientCredentialsAuth:
         self.args = args
         self.kwargs = kwargs
 
+
 @dataclass
 class ComputerFirecrestConfig:
     """Configuration of a computer using FirecREST as transport plugin."""
@@ -89,10 +90,12 @@ class ComputerFirecrestConfig:
     token_uri: str
     client_id: str
     client_secret: str
-    machine: str
+    compute_resource: str
     temp_directory: str
     workdir: str
+    api_version: str
     small_file_size_mb: float = 1.0
+
 
 class RequestTelemetry:
     """A to gather telemetry on requests."""
@@ -112,12 +115,13 @@ class RequestTelemetry:
         self.counts[endpoint] += 1
         return method(url, **kwargs)
 
+
 @pytest.fixture(scope="function")
 def firecrest_config(
     pytestconfig: pytest.Config,
     request: pytest.FixtureRequest,
     monkeypatch,
-    tmp_path: Path
+    tmp_path: Path,
 ):
     """
     If a config file is given it sets up a client environment with the information
@@ -154,7 +158,7 @@ def firecrest_config(
                 config.client_id, config.client_secret, config.token_uri
             ),
         )
-        client.mkdir(config.machine, config.scratch_path, p=True)
+        client.mkdir(config.compute_resource, config.scratch_path, p=True)
 
         if record_requests:
             telemetry = RequestTelemetry()
@@ -171,7 +175,7 @@ def firecrest_config(
         # because they use `rm -r`:
         # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L347
         if not no_clean:
-            client.simple_delete(config.machine, config.scratch_path)
+            client.simple_delete(config.compute_resource, config.scratch_path)
 
         if telemetry is not None:
             test_name = request.node.name
@@ -180,10 +184,15 @@ def firecrest_config(
             ] = telemetry.counts
     else:
         if no_clean or record_requests:
-            raise ValueError("--firecrest-{no-clean,requests} options are only available when a config file is passed using --firecrest-config.")
+            raise ValueError(
+                "--firecrest-{no-clean,requests} options are only available"
+                " when a config file is passed using --firecrest-config."
+            )
 
         monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
-        monkeypatch.setattr(firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth)
+        monkeypatch.setattr(
+            firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth
+        )
 
         # dummy config
         _temp_directory = tmp_path / "temp"
@@ -192,8 +201,9 @@ def firecrest_config(
         Path(tmp_path / ".firecrest").mkdir()
         _secret_path = Path(tmp_path / ".firecrest/secret69")
         _secret_path.write_text("secret_string")
-        
+
         workdir = tmp_path / "scratch"
+        workdir.mkdir()
 
         yield ComputerFirecrestConfig(
             url="https://URI",
@@ -201,10 +211,12 @@ def firecrest_config(
             client_id="CLIENT_ID",
             client_secret=str(_secret_path),
             compute_resource="MACHINE_NAME",
+            workdir=str(workdir),
             small_file_size_mb=1.0,
             temp_directory=str(_temp_directory),
             api_version="2",
         )
+
 
 def submit(
     machine: str,
