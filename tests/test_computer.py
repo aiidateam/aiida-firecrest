@@ -46,7 +46,7 @@ def test_create_secret_file_with_secret_value(tmp_path, monkeypatch):
     assert Path(result).read_text() == secret
 
 
-def test_validate_temp_directory(myfirecrest, monkeypatch, tmpdir: Path):
+def test_validate_temp_directory(firecrest_config, monkeypatch, tmpdir: Path):
     from aiida_firecrest.transport import _validate_temp_directory
 
     monkeypatch.setattr("click.echo", lambda x: None)
@@ -94,7 +94,7 @@ def test_validate_temp_directory(myfirecrest, monkeypatch, tmpdir: Path):
     assert not Path(tmpdir / "temp_on_server_directory" / "crap.txt").exists()
 
 
-def test_dynamic_info(myfirecrest, monkeypatch, tmpdir: Path):
+def test_dynamic_info(firecrest_config, monkeypatch, tmpdir: Path):
     from aiida_firecrest.transport import _dynamic_info_direct_size
 
     monkeypatch.setattr("click.echo", lambda x: None)

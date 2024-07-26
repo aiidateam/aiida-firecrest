@@ -3,54 +3,51 @@ import os
 from pathlib import Path
 import random
 import stat
-from typing import Optional
+from typing import Optional, Any, Callable
+import json
+from functools import partial
+from urllib.parse import urlparse
+from dataclasses import dataclass
 
 from aiida import orm
 import firecrest
 import firecrest.path
 import pytest
+import requests
 
 
 class Values:
     _DEFAULT_PAGE_SIZE: int = 25
 
 
-@pytest.fixture()
-def firecrest_computer(myfirecrest, tmpdir: Path):
+@pytest.fixture
+def firecrest_computer(firecrest_config):
     """Create and return a computer configured for Firecrest.
 
     Note, the computer is not stored in the database.
     """
 
     # create a temp directory and set it as the workdir
-    _scratch = tmpdir / "scratch"
-    _temp_directory = tmpdir / "temp"
-    _scratch.mkdir()
-    _temp_directory.mkdir()
-
-    Path(tmpdir / ".firecrest").mkdir()
-    _secret_path = Path(tmpdir / ".firecrest/secret69")
-    _secret_path.write_text("SECRET_STRING")
 
     computer = orm.Computer(
         label="test_computer",
         description="test computer",
         hostname="-",
-        workdir=str(_scratch),
+        workdir=firecrest_config.workdir,
         transport_type="firecrest",
         scheduler_type="firecrest",
     )
     computer.set_minimum_job_poll_interval(5)
     computer.set_default_mpiprocs_per_machine(1)
     computer.configure(
-        url=" https://URI",
-        token_uri="https://TOKEN_URI",
-        client_id="CLIENT_ID",
-        client_secret=str(_secret_path),
-        compute_resource="MACHINE_NAME",
-        small_file_size_mb=1.0,
-        temp_directory=str(_temp_directory),
-        api_version="2",
+        url=firecrest_config.url,
+        token_uri=firecrest_config.token_uri,
+        client_id=firecrest_config.client_id,
+        client_secret=firecrest_config.client_secret,
+        compute_resource=firecrest_config.compute_resource,
+        small_file_size_mb=firecrest_config.small_file_size_mb,
+        temp_directory=firecrest_config.temp_directory,
+        api_version=firecrest_config.api_version,
     )
     computer.store()
     return computer
@@ -84,15 +81,130 @@ class MockClientCredentialsAuth:
         self.args = args
         self.kwargs = kwargs
 
+@dataclass
+class ComputerFirecrestConfig:
+    """Configuration of a computer using FirecREST as transport plugin."""
+
+    url: str
+    token_uri: str
+    client_id: str
+    client_secret: str
+    machine: str
+    temp_directory: str
+    workdir: str
+    small_file_size_mb: float = 1.0
+
+class RequestTelemetry:
+    """A to gather telemetry on requests."""
+
+    def __init__(self) -> None:
+        self.counts = {}
+
+    def wrap(
+        self,
+        method: Callable[..., requests.Response],
+        url: str | bytes,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Wrap a requests method to gather telemetry."""
+        endpoint = urlparse(url if isinstance(url, str) else url.decode("utf-8")).path
+        self.counts.setdefault(endpoint, 0)
+        self.counts[endpoint] += 1
+        return method(url, **kwargs)
 
 @pytest.fixture(scope="function")
-def myfirecrest(
+def firecrest_config(
     pytestconfig: pytest.Config,
+    request: pytest.FixtureRequest,
     monkeypatch,
+    tmp_path: Path
 ):
-    monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
-    monkeypatch.setattr(firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth)
+    """
+    If a config file is given it sets up a client environment with the information
+    of the config file and uses pyfirecrest to communicate with the server.
+    ┌─────────────────┐───►┌─────────────┐───►┌──────────────────┐
+    │ aiida_firecrest │    │ pyfirecrest │    │ FirecREST server │
+    └─────────────────┘◄───└─────────────┘◄───└──────────────────┘
 
+    if `config_path` is not given, it monkeypatches pyfirecrest so we never
+    actually communicate with a server.
+    ┌─────────────────┐───►┌─────────────────────────────┐
+    │ aiida_firecrest │    │ pyfirecrest (monkeypatched) │
+    └─────────────────┘◄───└─────────────────────────────┘
+    """
+    config_path: str | None = request.config.getoption("--firecrest-config")
+    no_clean: bool = request.config.getoption("--firecrest-no-clean")
+    record_requests: bool = request.config.getoption("--firecrest-requests")
+
+    if config_path is not None:
+        telemetry: RequestTelemetry | None = None
+        # if given, use this config
+        with open(config_path, encoding="utf8") as handle:
+            config = json.load(handle)
+        config = ComputerFirecrestConfig(**config)
+        # rather than use the scratch_path directly, we use a subfolder,
+        # which we can then clean
+        config.workdir = config.workdir + "/pytest_tmp"
+
+        # we need to connect to the client here,
+        # to ensure that the scratch path exists and is empty
+        client = firecrest.Firecrest(
+            firecrest_url=config.url,
+            authorization=firecrest.ClientCredentialsAuth(
+                config.client_id, config.client_secret, config.token_uri
+            ),
+        )
+        client.mkdir(config.machine, config.scratch_path, p=True)
+
+        if record_requests:
+            telemetry = RequestTelemetry()
+            monkeypatch.setattr(requests, "get", partial(telemetry.wrap, requests.get))
+            monkeypatch.setattr(
+                requests, "post", partial(telemetry.wrap, requests.post)
+            )
+            monkeypatch.setattr(requests, "put", partial(telemetry.wrap, requests.put))
+            monkeypatch.setattr(
+                requests, "delete", partial(telemetry.wrap, requests.delete)
+            )
+        yield config
+        # Note this shouldn't really work, for folders but it does :shrug:
+        # because they use `rm -r`:
+        # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L347
+        if not no_clean:
+            client.simple_delete(config.machine, config.scratch_path)
+
+        if telemetry is not None:
+            test_name = request.node.name
+            pytestconfig.stash.setdefault("firecrest_requests", {})[
+                test_name
+            ] = telemetry.counts
+    else:
+        if no_clean or record_requests:
+            raise ValueError("--firecrest-{no-clean,requests} options are only available when a config file is passed using --firecrest-config.")
+
+        monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
+        monkeypatch.setattr(firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth)
+
+        # dummy config
+        _temp_directory = tmp_path / "temp"
+        _temp_directory.mkdir()
+
+        Path(tmp_path / ".firecrest").mkdir()
+        _secret_path = Path(tmp_path / ".firecrest/secret69")
+        _secret_path.write_text("secret_string")
+        
+        workdir = tmp_path / "scratch"
+
+        yield ComputerFirecrestConfig(
+            url="https://URI",
+            token_uri="https://TOKEN_URI",
+            client_id="CLIENT_ID",
+            client_secret=str(_secret_path),
+            compute_resource="MACHINE_NAME",
+            small_file_size_mb=1.0,
+            temp_directory=str(_temp_directory),
+            api_version="2",
+        )
 
 def submit(
     machine: str,
