@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from functools import partial
 import hashlib
@@ -6,7 +8,7 @@ import os
 from pathlib import Path
 import random
 import stat
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 from aiida import orm
@@ -220,9 +222,9 @@ def firecrest_config(
 
 def submit(
     machine: str,
-    script_str: Optional[str] = None,
-    script_remote_path: Optional[str] = None,
-    script_local_path: Optional[str] = None,
+    script_str: str | None = None,
+    script_remote_path: str | None = None,
+    script_local_path: str | None = None,
     local_file=False,
 ):
     if local_file:
@@ -399,7 +401,7 @@ def simple_download(machine: str, remote_path: str, local_path: str):
 
 
 def simple_upload(
-    machine: str, local_path: str, remote_path: str, file_name: Optional[str] = None
+    machine: str, local_path: str, remote_path: str, file_name: str | None = None
 ):
     # this procedure is complecated in firecrest, but I am simplifying it here
     # we don't care about the details of the upload, we just want to make sure
