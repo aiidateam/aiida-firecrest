@@ -32,9 +32,6 @@ class ValidAuthOption(TypedDict, total=False):
     callback: Callable[..., Any]  # for validation
 
 
-class BuggyError(Exception):
-    # TODO: Remove this class when the code is stable
-    """Raised when something should absolutely not happen, but it does."""
 
 
 def _create_secret_file(ctx: Context, param: InteractiveOption, value: str) -> str:
@@ -282,8 +279,7 @@ class FirecrestTransport(Transport):
         url: str,
         token_uri: str,
         client_id: str,
-        client_secret: str,  # | Path,
-        # unfortunately we cannot store client_secret as a Path, because it is not JSON serializable
+        client_secret: str,
         client_machine: str,
         small_file_size_mb: float,
         temp_directory: str,

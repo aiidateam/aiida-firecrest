@@ -94,7 +94,7 @@ def test_validate_temp_directory(myfirecrest, monkeypatch, tmpdir: Path):
     assert not Path(tmpdir / "temp_on_server_directory" / "crap.txt").exists()
 
 
-def test__dynamic_info(myfirecrest, monkeypatch, tmpdir: Path):
+def test_dynamic_info(myfirecrest, monkeypatch, tmpdir: Path):
     from aiida_firecrest.transport import _dynamic_info_direct_size
 
     monkeypatch.setattr("click.echo", lambda x: None)
