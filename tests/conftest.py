@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import partial
 import hashlib
 import json
 import os
 from pathlib import Path
 import random
+import shutil
 import stat
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -51,7 +51,6 @@ def firecrest_computer(firecrest_config):
         temp_directory=firecrest_config.temp_directory,
         api_version=firecrest_config.api_version,
     )
-    computer.store()
     return computer
 
 
@@ -100,7 +99,10 @@ class ComputerFirecrestConfig:
 
 
 class RequestTelemetry:
-    """A to gather telemetry on requests."""
+    """A to gather telemetry on requests.
+    This class is stale and not used in the current implementation.
+    We keep it here for future use, if needed.
+    """
 
     def __init__(self) -> None:
         self.counts = {}
@@ -120,7 +122,6 @@ class RequestTelemetry:
 
 @pytest.fixture(scope="function")
 def firecrest_config(
-    pytestconfig: pytest.Config,
     request: pytest.FixtureRequest,
     monkeypatch,
     tmp_path: Path,
@@ -143,47 +144,52 @@ def firecrest_config(
     record_requests: bool = request.config.getoption("--firecrest-requests")
 
     if config_path is not None:
-        telemetry: RequestTelemetry | None = None
+        # telemetry: RequestTelemetry | None = None
         # if given, use this config
         with open(config_path, encoding="utf8") as handle:
             config = json.load(handle)
         config = ComputerFirecrestConfig(**config)
-        # rather than use the scratch_path directly, we use a subfolder,
-        # which we can then clean
+        # # rather than use the scratch_path directly, we use a subfolder,
+        # # which we can then clean
         config.workdir = config.workdir + "/pytest_tmp"
+        config.temp_directory = config.temp_directory + "/pytest_tmp"
 
-        # we need to connect to the client here,
-        # to ensure that the scratch path exists and is empty
+        # # we need to connect to the client here,
+        # # to ensure that the scratch path exists and is empty
         client = firecrest.Firecrest(
             firecrest_url=config.url,
             authorization=firecrest.ClientCredentialsAuth(
-                config.client_id, config.client_secret, config.token_uri
+                config.client_id,
+                Path(config.client_secret).read_text().strip(),
+                config.token_uri,
             ),
         )
-        client.mkdir(config.compute_resource, config.scratch_path, p=True)
+        client.mkdir(config.compute_resource, config.workdir, p=True)
+        client.mkdir(config.compute_resource, config.temp_directory, p=True)
 
-        if record_requests:
-            telemetry = RequestTelemetry()
-            monkeypatch.setattr(requests, "get", partial(telemetry.wrap, requests.get))
-            monkeypatch.setattr(
-                requests, "post", partial(telemetry.wrap, requests.post)
-            )
-            monkeypatch.setattr(requests, "put", partial(telemetry.wrap, requests.put))
-            monkeypatch.setattr(
-                requests, "delete", partial(telemetry.wrap, requests.delete)
-            )
+        # if record_requests:
+        #     telemetry = RequestTelemetry()
+        #     monkeypatch.setattr(requests, "get", partial(telemetry.wrap, requests.get))
+        #     monkeypatch.setattr(
+        #         requests, "post", partial(telemetry.wrap, requests.post)
+        #     )
+        #     monkeypatch.setattr(requests, "put", partial(telemetry.wrap, requests.put))
+        #     monkeypatch.setattr(
+        #         requests, "delete", partial(telemetry.wrap, requests.delete)
+        # )
         yield config
-        # Note this shouldn't really work, for folders but it does :shrug:
-        # because they use `rm -r`:
-        # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L347
+        # # Note this shouldn't really work, for folders but it does :shrug:
+        # # because they use `rm -r`:
+        # # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L347
         if not no_clean:
-            client.simple_delete(config.compute_resource, config.scratch_path)
+            client.simple_delete(config.compute_resource, config.workdir)
+            client.simple_delete(config.compute_resource, config.temp_directory)
 
-        if telemetry is not None:
-            test_name = request.node.name
-            pytestconfig.stash.setdefault("firecrest_requests", {})[
-                test_name
-            ] = telemetry.counts
+        # if telemetry is not None:
+        #     test_name = request.node.name
+        #     pytestconfig.stash.setdefault("firecrest_requests", {})[
+        #         test_name
+        #     ] = telemetry.counts
     else:
         if no_clean or record_requests:
             raise ValueError(
@@ -368,18 +374,18 @@ def stat_(machine: str, targetpath: firecrest.path, dereference=True):
     }
 
 
-def mkdir(machine: str, target_path: str, p: bool = False):
-    if p:
-        os.makedirs(target_path)
-    else:
-        os.mkdir(target_path)
+def mkdir(
+    machine: str, target_path: str, p: bool = False, ignore_existing: bool = False
+):
+    target = Path(target_path)
+    target.mkdir(exist_ok=ignore_existing, parents=p)
 
 
 def simple_delete(machine: str, target_path: str):
     if not Path(target_path).exists():
         raise FileNotFoundError(f"File or folder {target_path} does not exist")
     if os.path.isdir(target_path):
-        os.rmdir(target_path)
+        shutil.rmtree(target_path)
     else:
         os.remove(target_path)
 
@@ -503,7 +509,7 @@ def parameters():
                 "description": "The maximum allowable file size for various operations of the utilities microservice",
                 "name": "UTILITIES_MAX_FILE_SIZE",
                 "unit": "MB",
-                "value": "69",
+                "value": "5",
             },
             {
                 "description": (

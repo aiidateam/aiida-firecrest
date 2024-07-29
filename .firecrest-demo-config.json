@@ -1,0 +1,11 @@
+ {
+    "url": "",
+    "token_uri": "",
+    "client_id": "",
+    "client_secret": "",
+    "compute_resource": "",
+    "temp_directory": "",
+    "small_file_size_mb": 5.0,
+    "workdir": "",
+    "api_version": "1.16.0"
+}

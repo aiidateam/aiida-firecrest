@@ -57,7 +57,6 @@ def _create_secret_file(ctx: Context, param: InteractiveOption, value: str) -> s
             click.style("Fireport: ", bold=True, fg="magenta")
             + f"Client Secret stored at {secret_path}"
         )
-
     return str(secret_path)
 
 
@@ -377,7 +376,7 @@ class FirecrestTransport(Transport):
 
         self._payoff_override: bool | None = None
 
-        secret = Path(client_secret).read_text()
+        secret = Path(client_secret).read_text().strip()
         try:
             self._client = Firecrest(
                 firecrest_url=self._url,
@@ -515,11 +514,20 @@ class FirecrestTransport(Transport):
 
     def makedirs(self, path: str, ignore_existing: bool = False) -> None:
         """Make directories on the remote."""
+        new_path = self._cwd.joinpath(path)
+        if not ignore_existing and new_path.exists():
+            # Note: FirecREST does not raise an error if the directory already exists, and parent is True.
+            # which makes sense, but following the Superclass, we should raise an OSError in that case.
+            # AiiDA expects an OSError, instead of a FileExistsError
+            raise OSError(f"'{path}' already exists")
         self._cwd.joinpath(path).mkdir(parents=True, exist_ok=ignore_existing)
 
     def mkdir(self, path: str, ignore_existing: bool = False) -> None:
         """Make a directory on the remote."""
-        self._cwd.joinpath(path).mkdir(exist_ok=ignore_existing)
+        try:
+            self._cwd.joinpath(path).mkdir(exist_ok=ignore_existing)
+        except FileExistsError as err:
+            raise OSError(f"'{path}' already exists") from err
 
     def normalize(self, path: str = ".") -> str:
         """Resolve the path."""
@@ -758,7 +766,7 @@ class FirecrestTransport(Transport):
         self,
         remotepath: str | FcPath,
         localpath: str | Path,
-        dereference: bool = False,
+        dereference: bool = True,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -768,15 +776,15 @@ class FirecrestTransport(Transport):
         Note that this method is not part of the Transport interface, and is not meant to be used publicly.
 
         :param dereference: If True, follow symlinks.
-            note: FirecREST doesn't support `--dereference` for tar call,
-            so dereference should always be False, for now.
         """
 
         _ = uuid.uuid4()
         remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
 
         # Compress
-        self._client.compress(self._machine, str(remotepath), remote_path_temp)
+        self._client.compress(
+            self._machine, str(remotepath), remote_path_temp, dereference=dereference
+        )
 
         # Download
         localpath_temp = Path(localpath).joinpath(f"temp_{_}.tar")
@@ -840,7 +848,7 @@ class FirecrestTransport(Transport):
         if self.payoff(remote):
             # in this case send a request to the server to tar the files and then download the tar file
             # unfortunately, the server does not provide a deferenced tar option, yet.
-            self._gettreetar(remote, local)
+            self._gettreetar(remote, local, dereference=dereference)
         else:
             # otherwise download the files one by one
             for remote_item in remote.iterdir(recursive=True):
