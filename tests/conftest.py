@@ -55,6 +55,7 @@ def firecrest_computer(firecrest_config):
 
 
 class MockFirecrest:
+    """Mocks py:class:`pyfirecrest.Firecrest`."""
     def __init__(self, firecrest_url, *args, **kwargs):
         self._firecrest_url = firecrest_url
         self.args = args
@@ -78,6 +79,7 @@ class MockFirecrest:
 
 
 class MockClientCredentialsAuth:
+    """Mocks py:class:`pyfirecrest.ClientCredentialsAuth`."""
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
@@ -127,8 +129,8 @@ def firecrest_config(
     tmp_path: Path,
 ):
     """
-    If a config file is given it sets up a client environment with the information
-    of the config file and uses pyfirecrest to communicate with the server.
+    If a config file is provided it sets up a client environment with the information
+    in the config file and uses pyfirecrest to communicate with the server.
     ┌─────────────────┐───►┌─────────────┐───►┌──────────────────┐
     │ aiida_firecrest │    │ pyfirecrest │    │ FirecREST server │
     └─────────────────┘◄───└─────────────┘◄───└──────────────────┘

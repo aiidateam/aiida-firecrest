@@ -45,4 +45,4 @@ repos:
       - "types-PyYAML"
       - "types-requests"
       - "pyfirecrest>=2.6.0"
-      - "aiida-core>=2.6.0"  # please change to 2.6.2 when released
+      - "aiida-core>=2.6.0"  # please change to 2.6.2 when released Issue #45
