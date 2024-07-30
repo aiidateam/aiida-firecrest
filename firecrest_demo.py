@@ -4,6 +4,7 @@ It clones FirecREST from a given URL and tag, builds the docker environment, and
 It's useful for local testing and development.
 Currently, it's not used in the CI/CD pipeline, and it's not part of the AiiDA plugin.
 This code is not tested, with anything above version "v1.13.0" of FirecREST, and it's not maintained.
+See also https://github.com/aiidateam/aiida-firecrest/issues/47
 """
 from __future__ import annotations
 

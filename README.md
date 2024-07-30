@@ -92,8 +92,8 @@ If you encounter any problems/bug, please don't hesitate to open an issue on thi
 
 Calculations are now running successfully, however, there are still issues regarding efficiency, Could be improved:
 
-1. Monitoring / management of API request rates could to be improved. Currently this is left up to PyFirecREST.
-2. Each transfer request includes 2 seconds of `sleep` time, imposed by `pyfirecrest`. One can takes use of their `async` client, but with current design of `aiida-core`, the gain will be minimum. (see the [closing comment of issue#94 on pyfirecrest](https://github.com/eth-cscs/pyfirecrest/issues/94) and [PR#6079 on aiida-core ](https://github.com/aiidateam/aiida-core/pull/6079))
+1. Monitoring / management of API request rates could to be improved. Currently this is left up to pyfirecrest.
+2. Each transfer request includes 2 seconds of `sleep` time, imposed by pyfirecrest. One can takes use of their `async` client, but with current design of `aiida-core`, the gain will be minimum. (see the [closing comment of issue#94 on pyfirecrest](https://github.com/eth-cscs/pyfirecrest/issues/94) and [PR#6079 on aiida-core ](https://github.com/aiidateam/aiida-core/pull/6079))
 
 ## For developers
 
@@ -119,7 +119,7 @@ It is recommended to run the tests via [tox](https://tox.readthedocs.io/en/lates
 tox
 ```
 
-By default, the tests are run using a monkey patched PyFirecREST.
+By default, the tests are run using a monkey patched pyfirecrest.
 This allows for quick testing and debugging of the plugin, without needing to connect to a real server, but is obviously not guaranteed to be fully representative of the real behaviour.
 
 To have a guaranteed proof, you may also provide connections details to a real FirecREST server:
@@ -201,11 +201,11 @@ although it is of note that you can find these files directly where you your `fi
 [black-link]: https://github.com/ambv/black
 
 
-### :bug: Fishing :bug: Bugs :bug:
+### :bug: Fishing Bugs :bug:
 
-First, start with running tests locally with no `config` file given, that would monkeypatch `pyfirecrest`. These set of test do not guarantee that the whole firecrest protocol is working, but it's very useful to quickly check if `aiida-firecrest` is behaving as it's expected to do. To run just simply use `pytest` or `tox`.
+First, start with running tests locally with no `config` file given, that would monkeypatch pyfirecrest. These set of test do not guarantee that the whole firecrest protocol is working, but it's very useful to quickly check if `aiida-firecrest` is behaving as it's expected to do. To run just simply use `pytest` or `tox`.
 
-If these tests pass and the bug persists, consider providing a `config` file to run the tests on a docker image or directly on a real server. Be aware of versioning, `pyfirecrest` doesn't check which version of api it's interacting with.  (TODO: open an issue on this)
+If these tests pass and the bug persists, consider providing a `config` file to run the tests on a docker image or directly on a real server. Be aware of versioning, pyfirecrest doesn't check which version of api it's interacting with.  (see https://github.com/eth-cscs/pyfirecrest/issues/116)
 
 If the bug persists and test still passes, then most certainly it's a problem of `aiida-firecrest`.
-If not, probably the issue is from FirecREST, you might open an issue to [`pyfirecrest`](https://github.com/eth-cscs/pyfirecrest) or [`FirecREST`](https://github.com/eth-cscs/firecrest).
+If not, probably the issue is from FirecREST, you might open an issue to [pyfirecrest](https://github.com/eth-cscs/pyfirecrest) or [`FirecREST`](https://github.com/eth-cscs/firecrest).

@@ -23,14 +23,12 @@
 
 ### Tests
 
-- The testing utils responsible for mocking the FirecREST server (specifically FirecrestMockServer) have been have been replaced with utils monkeypatching pyfirecrest. The FirecREST mocking utils introduced a maintenance overhead that is not in the responsibility of this repository. We still continue to support running with a real server and plan to continue running the tests with the [demo docker image](https://github.com/eth-cscs/firecrest/tree/master/deploy/demo) offered by CSCS.
-The downside was debugging wasn't easy at all. Not always obvious which of the three is causing a bug.
-Because of this, a new set of tests only verify the functionality of `aiida-firecrest` by directly mocking PyFirecREST. Maintaining this set in `tests/` is simpler because we just need to monitor the return values of PyFirecREST​. While maintaining the former was more difficult as you have to keep up with both FirecREST and PyFirecREST.
+- The testing utils responsible for mocking the FirecREST server (specifically FirecrestMockServer) have been replaced with utils monkeypatching pyfirecrest. The FirecREST mocking utils introduced a maintenance overhead that is not in the responsibility of this repository. We still continue to support running with a real FirecREST server and plan to continue running the tests with the [demo docker image](https://github.com/eth-cscs/firecrest/tree/master/deploy/demo) offered by CSCS. The docker image has been disabled for the moment due to some problems (see issue #47).
 
 
 ### Miscellaneous
 
-- class `FcPath` is removed from interface here, as it has [merged](https://github.com/eth-cscs/pyfirecrest/pull/43) into `pyfirecrest`
+- class `FcPath` is removed from interface here, as it has [merged](https://github.com/eth-cscs/pyfirecrest/pull/43) into pyfirecrest
 
 ## v0.1.0 (December 2021)
 
