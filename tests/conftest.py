@@ -56,6 +56,7 @@ def firecrest_computer(firecrest_config):
 
 class MockFirecrest:
     """Mocks py:class:`pyfirecrest.Firecrest`."""
+
     def __init__(self, firecrest_url, *args, **kwargs):
         self._firecrest_url = firecrest_url
         self.args = args
@@ -80,6 +81,7 @@ class MockFirecrest:
 
 class MockClientCredentialsAuth:
     """Mocks py:class:`pyfirecrest.ClientCredentialsAuth`."""
+
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
