@@ -1,5 +1,4 @@
 from pathlib import Path
-import random
 
 from aiida import orm
 from aiida.schedulers.datastructures import CodeRunMode, JobTemplate
@@ -36,7 +35,7 @@ def test_get_jobs(firecrest_computer: orm.Computer):
     scheduler._DEFAULT_PAGE_SIZE = 2
     Values._DEFAULT_PAGE_SIZE = 2
 
-    joblist = [random.randint(10000, 99999) for i in range(5)]
+    joblist = ["111", "222", "333", "444", "555"]
     result = scheduler.get_jobs(joblist)
     assert len(result) == 5
     for i in range(5):

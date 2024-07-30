@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import itertools
 import json
 import os
 from pathlib import Path
-import random
 import shutil
 import stat
 from typing import Any, Callable
@@ -61,6 +61,7 @@ class MockFirecrest:
         self._firecrest_url = firecrest_url
         self.args = args
         self.kwargs = kwargs
+        self.job_id_generator = itertools.cycle(range(1000, 999999))
 
     def submit(
         self,
@@ -75,7 +76,7 @@ class MockFirecrest:
 
         if script_remote_path and not Path(script_remote_path).exists():
             raise FileNotFoundError(f"File {script_remote_path} does not exist")
-        job_id = random.randint(10000, 99999)
+        job_id = next(self.job_id_generator)
 
         # Filter out lines starting with '#SBATCH'
         with open(script_remote_path) as file:
