@@ -1,14 +1,17 @@
 """Scheduler interface."""
 from __future__ import annotations
 
+import datetime
+import itertools
 import re
 import string
+import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from aiida.engine.processes.exit_code import ExitCode
 from aiida.schedulers import Scheduler, SchedulerError
 from aiida.schedulers.datastructures import JobInfo, JobState, JobTemplate
-from aiida.schedulers.plugins.slurm import SlurmJobResource
+from aiida.schedulers.plugins.slurm import _TIME_REGEXP, SlurmJobResource
 from firecrest.FirecrestException import FirecrestException
 
 from .utils import convert_header_exceptions
@@ -26,9 +29,7 @@ class FirecrestScheduler(Scheduler):
         "can_query_by_user": False,
     }
     _logger = Scheduler._logger.getChild("firecrest")
-
-    # TODO if this is missing is causes plugin info to fail on verdi
-    is_process_function = False
+    _DEFAULT_PAGE_SIZE = 25
 
     @classmethod
     def get_description(cls) -> str:
@@ -198,8 +199,7 @@ class FirecrestScheduler(Scheduler):
             try:
                 result = transport._client.submit(
                     transport._machine,
-                    transport._get_path(working_directory, filename),
-                    local_file=False,
+                    script_remote_path=transport._get_path(working_directory, filename),
                 )
             except FirecrestException as exc:
                 raise SchedulerError(str(exc)) from exc
@@ -211,21 +211,35 @@ class FirecrestScheduler(Scheduler):
         user: str | None = None,
         as_dict: bool = False,
     ) -> list[JobInfo] | dict[str, JobInfo]:
+        results = []
         transport = self.transport
+
         with convert_header_exceptions({"machine": transport._machine}):
             # TODO handle pagination (pageSize, pageNumber) if many jobs
+            # This will do pagination
             try:
-                results = transport._client.poll_active(transport._machine, jobs)
+                for page_iter in itertools.count():
+                    results += transport._client.poll_active(
+                        transport._machine, jobs, page_number=page_iter
+                    )
+                    if len(results) < self._DEFAULT_PAGE_SIZE * (page_iter + 1):
+                        break
             except FirecrestException as exc:
-                raise SchedulerError(str(exc)) from exc
+                # firecrest returns error if the job is completed
+                # TODO: check what type of error is returned and handle it properly
+                if "Invalid job id specified" not in str(exc):
+                    raise SchedulerError(str(exc)) from exc
         job_list = []
         for raw_result in results:
+            # TODO: probably the if below is not needed, because recently
+            # the server should return only the jobs of the current user
             if user is not None and raw_result["user"] != user:
                 continue
-
             this_job = JobInfo()  # type: ignore
 
             this_job.job_id = raw_result["jobid"]
+            # TODO: firecrest does not return the annotation, so set to an empty string.
+            # To be investigated how important that is.
             this_job.annotation = ""
 
             job_state_raw = raw_result["state"]
@@ -276,12 +290,14 @@ class FirecrestScheduler(Scheduler):
                     )
                 )
 
+            # See issue https://github.com/aiidateam/aiida-firecrest/issues/39
             # try:
             #     this_job.num_mpiprocs = int(thisjob_dict['number_cpus'])
             # except ValueError:
             #     self.logger.warning(
             #         'The number of allocated cores is not '
-            #         'an integer ({}) for job id {}!'.format(thisjob_dict['number_cpus'], this_job.job_id)
+            #         'an integer ({}) for job id {}!'.format(
+            # thisjob_dict['number_cpus'], this_job.job_id)
             #     )
 
             # ALLOCATED NODES HERE
@@ -290,34 +306,54 @@ class FirecrestScheduler(Scheduler):
             # therefore it requires some parsing, that is unnecessary now.
             # I just store is as a raw string for the moment, and I leave
             # this_job.allocated_machines undefined
-            # if this_job.job_state == JobState.RUNNING:
-            #     this_job.allocated_machines_raw = thisjob_dict['allocated_machines']
+            if this_job.job_state == JobState.RUNNING:
+                this_job.allocated_machines_raw = raw_result["nodelist"]
 
             this_job.queue_name = raw_result["partition"]
 
-            # try:
-            #     walltime = (self._convert_time(thisjob_dict['time_limit']))
-            #     this_job.requested_wallclock_time_seconds = walltime  # pylint: disable=invalid-name
-            # except ValueError:
-            #     self.logger.warning(f'Error parsing the time limit for job id {this_job.job_id}')
+            try:
+                time_left = self._convert_time(raw_result["time_left"])
+                start_time = self._convert_time(raw_result["start_time"])
+
+                if time_left is None or start_time is None:
+                    this_job.requested_wallclock_time_seconds = 0
+                else:
+                    this_job.requested_wallclock_time_seconds = time_left + start_time
+
+            except ValueError:
+                self.logger.warning(
+                    f"Couldn't parse the time limit for job id {this_job.job_id}"
+                )
 
             # Only if it is RUNNING; otherwise it is not meaningful,
             # and may be not set (in my test, it is set to zero)
-            # if this_job.job_state == JobState.RUNNING:
-            #     try:
-            #         this_job.wallclock_time_seconds = (self._convert_time(thisjob_dict['time_used']))
-            #     except ValueError:
-            #         self.logger.warning(f'Error parsing time_used for job id {this_job.job_id}')
+            if this_job.job_state == JobState.RUNNING:
+                try:
+                    wallclock_time_seconds = self._convert_time(
+                        raw_result["start_time"]
+                    )
+                    if wallclock_time_seconds is not None:
+                        this_job.wallclock_time_seconds = wallclock_time_seconds
+                    else:
+                        this_job.wallclock_time_seconds = 0
+                except ValueError:
+                    self.logger.warning(
+                        f"Couldn't parse time_used for job id {this_job.job_id}"
+                    )
 
+            # dispatch_time is not returned explicitly by the FirecREST server
+            # see: https://github.com/aiidateam/aiida-firecrest/issues/40
             #     try:
             #         this_job.dispatch_time = self._parse_time_string(thisjob_dict['dispatch_time'])
             #     except ValueError:
             #         self.logger.warning(f'Error parsing dispatch_time for job id {this_job.job_id}')
 
-            # try:
-            #     this_job.submission_time = self._parse_time_string(thisjob_dict['submission_time'])
-            # except ValueError:
-            #     self.logger.warning(f'Error parsing submission_time for job id {this_job.job_id}')
+            try:
+                this_job.submission_time = self._parse_time_string(raw_result["time"])
+            except ValueError:
+                self.logger.warning(
+                    f"Couldn't parse submission_time for job id {this_job.job_id}"
+                )
 
             this_job.title = raw_result["name"]
 
@@ -353,6 +389,52 @@ class FirecrestScheduler(Scheduler):
         with convert_header_exceptions({"machine": transport._machine}):
             transport._client.cancel(transport._machine, jobid)
         return True
+
+    def _convert_time(self, string: str) -> int | None:
+        """
+        Note: this function was copied from the Slurm scheduler plugin
+        Convert a string in the format DD-HH:MM:SS to a number of seconds.
+        """
+        if string == "UNLIMITED":
+            return 2147483647  # == 2**31 - 1, largest 32-bit signed integer (68 years)
+
+        if string == "NOT_SET" or string == "N/A":
+            return None
+
+        groups = _TIME_REGEXP.match(string)
+        if groups is None:
+            raise ValueError("Unrecognized format for time string.")
+
+        groupdict = groups.groupdict()
+        # should not raise a ValueError, they all match digits only
+        days = int(groupdict["days"] if groupdict["days"] is not None else 0)
+        hours = int(groupdict["hours"] if groupdict["hours"] is not None else 0)
+        mins = int(groupdict["minutes"] if groupdict["minutes"] is not None else 0)
+        secs = int(groupdict["seconds"] if groupdict["seconds"] is not None else 0)
+
+        return days * 86400 + hours * 3600 + mins * 60 + secs
+
+    def _parse_time_string(
+        self, string: str, fmt: str = "%Y-%m-%dT%H:%M:%S"
+    ) -> datetime.datetime:
+        """
+        Note: this function was copied from the Slurm scheduler plugin
+        Parse a time string in the format returned from qstat -f and
+        returns a datetime object.
+        """
+
+        try:
+            time_struct = time.strptime(string, fmt)
+        except Exception as exc:
+            self.logger.debug(
+                f"Unable to parse time string {string}, the message was {exc}"
+            )
+            raise ValueError("Problem parsing the time string.") from exc
+
+        # I convert from a time_struct to a datetime object going through
+        # the seconds since epoch, as suggested on stackoverflow:
+        # http://stackoverflow.com/questions/1697815
+        return datetime.datetime.fromtimestamp(time.mktime(time_struct))
 
 
 # see https://slurm.schedmd.com/squeue.html#lbAG
