@@ -137,7 +137,7 @@ def firecrest_config(
     │ aiida_firecrest │    │ pyfirecrest │    │ FirecREST server │
     └─────────────────┘◄───└─────────────┘◄───└──────────────────┘
 
-    if `config_path` is not given, it monkeypatches pyfirecrest so we never
+    if a config file is not provided, it monkeypatches pyfirecrest so we never
     actually communicate with a server.
     ┌─────────────────┐───►┌─────────────────────────────┐
     │ aiida_firecrest │    │ pyfirecrest (monkeypatched) │
@@ -145,7 +145,10 @@ def firecrest_config(
     """
     config_path: str | None = request.config.getoption("--firecrest-config")
     no_clean: bool = request.config.getoption("--firecrest-no-clean")
-    record_requests: bool = request.config.getoption("--firecrest-requests")
+    # record_requests: bool = request.config.getoption("--firecrest-requests")
+    # record_requests: bool = request.config.getoption("--firecrest-requests")
+    # TODO: record_requests is un-maintained after PR#36, and practically not used.
+    # But let's keep it commented for future use, if needed.
 
     if config_path is not None:
         # telemetry: RequestTelemetry | None = None
@@ -195,7 +198,8 @@ def firecrest_config(
         #         test_name
         #     ] = telemetry.counts
     else:
-        if no_clean or record_requests:
+        # if no_clean or record_requests:
+        if no_clean:
             raise ValueError(
                 "--firecrest-{no-clean,requests} options are only available"
                 " when a config file is passed using --firecrest-config."
@@ -211,7 +215,7 @@ def firecrest_config(
         _temp_directory.mkdir()
 
         Path(tmp_path / ".firecrest").mkdir()
-        _secret_path = Path(tmp_path / ".firecrest/secret69")
+        _secret_path = Path(tmp_path / ".firecrest/secretabc")
         _secret_path.write_text("secret_string")
 
         workdir = tmp_path / "scratch"

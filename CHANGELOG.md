@@ -10,6 +10,7 @@
 - Added `_create_secret_file` to store user secret locally in `~/.firecrest/`
 - Added `_validate_temp_directory` to allocate a temporary directory useful for `extract` and `compress` methods on FirecREST server.
 - Added `_dynamic_info_direct_size` this is able to get info of direct transfer from the server rather than asking from users. Raise if fails to make a connection.
+- Added `_dynamic_info_firecrest_version` to fetch which version of FirecREST api is interacting with.
 - Added `_validate_checksum` to check integrity of downloaded/uploaded files.
 - Added `_gettreetar` & `_puttreetar` to transfer directories as tar files internally.
 - Added `payoff` function to calculate when is gainful to transfer as zip, and when to transfer individually.
@@ -24,7 +25,7 @@
 
 - The testing utils responsible for mocking the FirecREST server (specifically FirecrestMockServer) have been have been replaced with utils monkeypatching pyfirecrest. The FirecREST mocking utils introduced a maintenance overhead that is not in the responsibility of this repository. We still continue to support running with a real server and plan to continue running the tests with the [demo docker image](https://github.com/eth-cscs/firecrest/tree/master/deploy/demo) offered by CSCS.
 The downside was debugging wasn't easy at all. Not always obvious which of the three is causing a bug.
-Because of this, a new set of tests only verify the functionality of `aiida-firecrest` by directly mocking PyFirecREST. Maintaining this set in `tests/` is simpler because we just need to monitor the return values of PyFirecREST​. While maintaining the former is more difficult as you have to keep up with both FirecREST and PyFirecREST.
+Because of this, a new set of tests only verify the functionality of `aiida-firecrest` by directly mocking PyFirecREST. Maintaining this set in `tests/` is simpler because we just need to monitor the return values of PyFirecREST​. While maintaining the former was more difficult as you have to keep up with both FirecREST and PyFirecREST.
 
 
 ### Miscellaneous

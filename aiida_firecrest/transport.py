@@ -842,7 +842,7 @@ class FirecrestTransport(Transport):
             local = local.joinpath(remote.name)
             local.mkdir(parents=True, exist_ok=True)
         else:
-            # Destination directory does not exist, create and move content 69 inside it
+            # Destination directory does not exist, create and move content abc inside it
             local.mkdir(parents=True, exist_ok=False)
 
         if self.payoff(remote):
@@ -1060,7 +1060,7 @@ class FirecrestTransport(Transport):
             remote = self._cwd.joinpath(remote, localpath.name)
             self.mkdir(remote, ignore_existing=False)
         else:
-            # Destination directory does not exist, create and move content 69 inside it
+            # Destination directory does not exist, create and move content abc inside it
             self.mkdir(remote, ignore_existing=False)
 
         if self.payoff(localpath):

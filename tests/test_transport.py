@@ -380,17 +380,17 @@ def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
 
     # Note:
     # SSH transport behaviour
-    # transport.put('somepath/69', 'someremotepath/') == transport.put('somepath/69', 'someremotepath')
-    # transport.put('somepath/69', 'someremotepath/') != transport.put('somepath/69/', 'someremotepath/')
-    # transport.put('somepath/69', 'someremotepath/67') --> if 67 not exist, create and move content 69
+    # transport.put('somepath/abc', 'someremotepath/') == transport.put('somepath/abc', 'someremotepath')
+    # transport.put('somepath/abc', 'someremotepath/') != transport.put('somepath/abc/', 'someremotepath/')
+    # transport.put('somepath/abc', 'someremotepath/67') --> if 67 not exist, create and move content abc
     #  inside it (someremotepath/67)
-    # transport.put('somepath/69', 'someremotepath/67') --> if 67 exist, create 69 inside it (someremotepath/67/69)
-    # transport.put('somepath/69', 'someremotepath/6889/69')  -->  useless Error: OSError
+    # transport.put('somepath/abc', 'someremotepath/67') --> if 67 exist, create abc inside it (someremotepath/67/abc)
+    # transport.put('somepath/abc', 'someremotepath/6889/abc')  -->  useless Error: OSError
     # Weired
     # SSH "bug":
-    # transport.put('somepath/69', 'someremotepath/') --> assuming someremotepath exists, make 69
+    # transport.put('somepath/abc', 'someremotepath/') --> assuming someremotepath exists, make abc
     # while
-    # transport.put('somepath/69/', 'someremotepath/') --> assuming someremotepath exists, OSError:
+    # transport.put('somepath/abc/', 'someremotepath/') --> assuming someremotepath exists, OSError:
     # cannot make someremotepath
 
     tmpdir_remote = transport._temp_directory
@@ -552,12 +552,12 @@ def test_gettree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     transport.payoff_override = payoff
 
     # Note:
-    # SSH transport behaviour, 69 is a directory
-    # transport.get('somepath/69', 'someremotepath/') == transport.get('somepath/69', 'someremotepath')
-    # transport.get('somepath/69', 'someremotepath/') == transport.get('somepath/69/', 'someremotepath/')
-    # transport.get('someremotepath/69', 'somepath/69')--> if 69 exist, create 69 inside it ('somepath/69/69')
-    # transport.get('someremotepath/69', 'somepath/69')--> if 69 noexist,create 69 inside it ('somepath/69')
-    # transport.get('somepath/69', 'someremotepath/6889/69') --> create everything, make_parent = True
+    # SSH transport behaviour, abc is a directory
+    # transport.get('somepath/abc', 'someremotepath/') == transport.get('somepath/abc', 'someremotepath')
+    # transport.get('somepath/abc', 'someremotepath/') == transport.get('somepath/abc/', 'someremotepath/')
+    # transport.get('someremotepath/abc', 'somepath/abc')--> if abc exist, create abc inside it ('somepath/abc/abc')
+    # transport.get('someremotepath/abc', 'somepath/abc')--> if abc noexist,create abc inside it ('somepath/abc')
+    # transport.get('somepath/abc', 'someremotepath/6889/abc') --> create everything, make_parent = True
     tmpdir_remote = transport._temp_directory
     _remote = tmpdir_remote / "remotedir"
     _remote.mkdir()
