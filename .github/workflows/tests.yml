@@ -51,12 +51,11 @@ jobs:
     - name: Test with pytest
       run: pytest -vv  --cov=aiida_firecrest --cov-report=xml --cov-report=term
 
-    # Codecov failing, we need to fix token: https://github.com/aiidateam/aiida-firecrest/issues/38
-    # - name: Upload coverage reports to Codecov
-    #   uses: codecov/codecov-action@v3
-    #   with:
-    #     name: aiida-firecrest-pytests
-    #     flags: pytests
-    #     file: ./coverage.xml
-    #     fail_ci_if_error: true
-    #     token: ${{ secrets.CODECOV_TOKEN }}
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        name: aiida-firecrest-pytests
+        flags: pytests
+        file: ./coverage.xml
+        fail_ci_if_error: true
+        token: ${{ secrets.CODECOV_TOKEN }}
