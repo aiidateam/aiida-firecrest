@@ -24,11 +24,10 @@ classifiers = [
 keywords = ["aiida", "firecrest"]
 requires-python = ">=3.9"
 dependencies = [
-    "aiida-core@git+https://github.com/chrisjsewell/aiida_core.git@aiida-firecrest#egg=aiida-core",
+    "aiida-core@git+https://github.com/aiidateam/aiida-core.git@954cbdd",
     "click",
-    "pyfirecrest~=1.4.0",
+    "pyfirecrest@git+https://github.com/eth-cscs/pyfirecrest.git@6cae414",
     "pyyaml",
-    "requests",
 ]
 
 [project.urls]
