@@ -5,11 +5,10 @@
 
 AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/), via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
 
-It is currently tested against [FirecREST v1.13.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.13.0).
+It is currently tested against [FirecREST v2.6.0](https://github.com/eth-cscs/pyfirecrest/tree/v2.6.0).
 
-**NOTE:** This plugin is currently dependent on a fork of `aiida-core` from [PR #6043](https://github.com/aiidateam/aiida-core/pull/6043)
 
-## Usage
+## Installation
 
 Install via GitHub or PyPI:
 
@@ -44,73 +43,59 @@ You can then create a `Computer` in AiiDA:
 $ verdi computer setup
 Report: enter ? for help.
 Report: enter ! to ignore the default and set no value.
-Computer label: firecrest-client
-Hostname: unused
-Description []: My FirecREST client plugin
+Computer label: firecrest-client                 # your choice
+Hostname: unused                                 # your choice, irrelevant
+Description []: My FirecREST client plugin       # your choice
 Transport plugin: firecrest
 Scheduler plugin: firecrest
 Shebang line (first line of each script, starting with #!) [#!/bin/bash]:
 Work directory on the computer [/scratch/{username}/aiida/]:
 Mpirun command [mpirun -np {tot_num_mpiprocs}]:
-Default number of CPUs per machine: 2
-Default amount of memory per machine (kB).: 100
+Default number of CPUs per machine:  2           # depending on your compute resource
+Default amount of memory per machine (kB).: 100  # depending on your compute resource
 Escape CLI arguments in double quotes [y/N]:
 Success: Computer<3> firecrest-client created
 Report: Note: before the computer can be used, it has to be configured with the command:
-Report:   verdi -p quicksetup computer configure firecrest firecrest-client
+Report:   verdi -p MYPROFILE computer configure firecrest firecrest-client
 ```
 
 ```console
-$ verdi -p quicksetup computer configure firecrest firecrest-client
+$ verdi -p MYPROFILE computer configure firecrest firecrest-client
 Report: enter ? for help.
 Report: enter ! to ignore the default and set no value.
-Server URL: https://firecrest.cscs.ch
-Token URI: https://auth.cscs.ch/auth/realms/cscs/protocol/openid-connect/token
+Server URL: https://firecrest.cscs.ch          # this for CSCS
+Token URI: https://auth.cscs.ch/auth/realms/firecrest-clients/protocol/openid-connect/token
 Client ID: username-client
 Client Secret: xyz
-Client Machine: daint
-Maximum file size for direct transfer (MB) [5.0]:
+Compute resource (Machine): daint
+Temp directory on server: /scratch/something/ # "A temp directory on user's space on the server for creating temporary files (compression, extraction, etc.)"
+FirecREST api version [Enter 0 to get this info from server] [0]: 0
+Maximum file size for direct transfer (MB) [Enter 0 to get this info from server] [0]: 0
 Report: Configuring computer firecrest-client for user chrisj_sewell@hotmail.com.
 Success: firecrest-client successfully configured for chrisj_sewell@hotmail.com
 ```
 
+You can always check your config with
 ```console
 $ verdi computer show firecrest-client
----------------------------  ------------------------------------
-Label                        firecrest-client
-PK                           3
-UUID                         48813c55-1b2b-4afc-a1a1-e0d33a5b6868
-Description                  My FirecREST client plugin
-Hostname                     unused
-Transport type               firecrest
-Scheduler type               firecrest
-Work directory               /scratch/{username}/aiida/
-Shebang                      #!/bin/bash
-Mpirun command               mpirun -np {tot_num_mpiprocs}
-Default #procs/machine       2
-Default memory (kB)/machine  100
-Prepend text
-Append text
----------------------------  ------------------------------------
 ```
 
 See also the [pyfirecrest CLI](https://github.com/eth-cscs/pyfirecrest), for directly interacting with a FirecREST server.
 
+
+After this, everything should function normally through AiiDA with no problems.
 See [tests/test_calculation.py](tests/test_calculation.py) for a working example of how to use the plugin, via the AiiDA API.
+
+If you encounter any problems/bug, please don't hesitate to open an issue on this repository.
 
 ### Current Issues
 
-Simple calculations are now running successfully [in the tests](tests/test_calculation.py), however, there are still some critical issues, before this could be production ready:
+Calculations are now running successfully, however, there are still issues regarding efficiency, Could be improved:
 
-1. Currently uploading via firecrest changes `_aiidasubmit.sh` to `aiidasubmit.sh` 😱 ([see #191](https://github.com/eth-cscs/firecrest/issues/191)), so `metadata.options.submit_script_filename` should be set to this.
+1. Monitoring / management of API request rates could to be improved. Currently this is left up to pyfirecrest.
+2. Each transfer request includes 2 seconds of `sleep` time, imposed by pyfirecrest. One can takes use of their `async` client, but with current design of `aiida-core`, the gain will be minimum. (see the [closing comment of issue#94 on pyfirecrest](https://github.com/eth-cscs/pyfirecrest/issues/94) and [PR#6079 on aiida-core ](https://github.com/aiidateam/aiida-core/pull/6079))
 
-2. Handling of large (>5Mb) file uploads/downloads needs to be improved
-
-3. Handling of the client secret, which should likely not be stored in the database
-
-4. Monitoring / management of API request rates could to be improved
-
-## Development
+## For developers
 
 ```bash
 git clone
@@ -134,27 +119,45 @@ It is recommended to run the tests via [tox](https://tox.readthedocs.io/en/lates
 tox
 ```
 
-By default, the tests are run using a mock FirecREST server, in a temporary folder
-(see [aiida_fircrest.utils_test.FirecrestConfig](aiida_firecrest/utils_test.py)).
-This allows for quick testing and debugging of the plugin, without needing to connect to a real server,
-but is obviously not guaranteed to be fully representative of the real behaviour.
+By default, the tests are run using a monkey patched pyfirecrest.
+This allows for quick testing and debugging of the plugin, without needing to connect to a real server, but is obviously not guaranteed to be fully representative of the real behaviour.
 
-You can also provide connections details to a real FirecREST server:
+To have a guaranteed proof, you may also provide connections details to a real FirecREST server:
 
 ```bash
 tox -- --firecrest-config=".firecrest-demo-config.json"
 ```
 
-The format of the `.firecrest-demo-config.json` file is:
+
+If a config file is provided, tox sets up a client environment with the information
+in the config file and uses pyfirecrest to communicate with the server.
+```plaintext
+┌─────────────────┐───►┌─────────────┐───►┌──────────────────┐
+│ aiida_firecrest │    │ pyfirecrest │    │ FirecREST server │
+└─────────────────┘◄───└─────────────┘◄───└──────────────────┘
+```
+
+if a config file is not provided, it monkeypatches pyfirecrest so we never actually communicate with a server.
+```plaintext
+┌─────────────────┐───►┌─────────────────────────────┐
+│ aiida_firecrest │    │ pyfirecrest (monkeypatched) │
+└─────────────────┘◄───└─────────────────────────────┘
+```
+
+The format of the `.firecrest-demo-config.json` file, for example is like:
+
 
 ```json
-{
-    "url": "https://firecrest.cscs.ch",
-    "token_uri": "https://auth.cscs.ch/auth/realms/cscs/protocol/openid-connect/token",
+ {
+    "url": "https://firecrest-tds.cscs.ch",
+    "token_uri": "https://auth.cscs.ch/auth/realms/firecrest-clients/protocol/openid-connect/token",
     "client_id": "username-client",
-    "client_secret": "xyz",
-    "machine": "daint",
-    "scratch_path": "/scratch/snx3000/username"
+    "client_secret": "path-to-secret-file",
+    "compute_resource": "daint",
+    "temp_directory": "/scratch/snx3000/username/",
+    "small_file_size_mb": 5.0,
+    "workdir": "/scratch/snx3000/username/",
+    "api_version": "1.16.0"
 }
 ```
 
@@ -164,17 +167,18 @@ In this mode, if you want to inspect the generated files, after a failure, you c
 tox -- --firecrest-config=".firecrest-demo-config.json" --firecrest-no-clean
 ```
 
-See [firecrest_demo.py](firecrest_demo.py) for how to start up a demo server,
-and also [server-tests.yml](.github/workflows/server-tests.yml) for how the tests are run against the demo server on GitHub Actions.
+**These tests were successful against [FirecREST v1.16.0](https://github.com/eth-cscs/firecrest/releases/tag/v1.16.0), except those who require to list directories in a symlink directory, which fail due to a bug in FirecREST. [An issue](https://github.com/eth-cscs/firecrest/issues/205) is open on FirecREST repo about this.**
 
-If you want to analyse statistics of the API requests made by each test,
+Instead of a real server (which requires an account and credential), tests can also run against a docker image provided by FirecREST. See [firecrest_demo.py](firecrest_demo.py) for how to start up a demo server, and also [server-tests.yml](.github/workflows/server-tests.yml) for how the tests are run against the demo server on GitHub Actions.
+
+<!-- If you want to analyse statistics of the API requests made by each test,
 you can use the `--firecrest-requests` option:
 
 ```bash
 tox -- --firecrest-requests
-```
+``` -->
 
-### Notes on using the demo server on MacOS
+#### Notes on using the demo server on MacOS
 
 A few issues have been noted when using the demo server on MacOS (non-Mx):
 
@@ -195,3 +199,13 @@ although it is of note that you can find these files directly where you your `fi
 [codecov-link]: https://codecov.io/gh/aiidateam/aiida-firecrest
 [black-badge]: https://img.shields.io/badge/code%20style-black-000000.svg
 [black-link]: https://github.com/ambv/black
+
+
+### :bug: Fishing Bugs :bug:
+
+First, start with running tests locally with no `config` file given, that would monkeypatch pyfirecrest. These set of test do not guarantee that the whole firecrest protocol is working, but it's very useful to quickly check if `aiida-firecrest` is behaving as it's expected to do. To run just simply use `pytest` or `tox`.
+
+If these tests pass and the bug persists, consider providing a `config` file to run the tests on a docker image or directly on a real server. Be aware of versioning, pyfirecrest doesn't check which version of api it's interacting with.  (see https://github.com/eth-cscs/pyfirecrest/issues/116)
+
+If the bug persists and test still passes, then most certainly it's a problem of `aiida-firecrest`.
+If not, probably the issue is from FirecREST, you might open an issue to [pyfirecrest](https://github.com/eth-cscs/pyfirecrest) or [`FirecREST`](https://github.com/eth-cscs/firecrest).

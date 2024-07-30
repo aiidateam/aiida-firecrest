@@ -132,3 +132,6 @@ dmypy.json
 .vscode/
 .demo-server/
 _archive/
+
+
+.firecrest-config.json
