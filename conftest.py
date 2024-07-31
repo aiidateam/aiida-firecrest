@@ -1,4 +1,5 @@
 """Pytest configuration that must be at the root level."""
+
 pytest_plugins = ["aiida.manage.tests.pytest_fixtures"]
 
 

@@ -6,6 +6,7 @@ Currently, it's not used in the CI/CD pipeline, and it's not part of the AiiDA p
 This code is not tested, with anything above version "v1.13.0" of FirecREST, and it's not maintained.
 See also https://github.com/aiidateam/aiida-firecrest/issues/47
 """
+
 from __future__ import annotations
 
 from argparse import ArgumentParser

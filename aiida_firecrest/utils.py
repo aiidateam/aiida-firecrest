@@ -65,7 +65,7 @@ def convert_header_exceptions(
             yield
         except HeaderException as exc:
             for header in exc.responses[-1].headers:
-                c = converters.get(header, None)
+                c = converters.get(header)
                 if c is not None:
                     raise c(data) from exc
             raise
