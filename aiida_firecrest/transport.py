@@ -1,4 +1,5 @@
 """Transport interface."""
+
 from __future__ import annotations
 
 from contextlib import suppress
@@ -27,7 +28,9 @@ class ValidAuthOption(TypedDict, total=False):
     switch: bool  # whether the option is a boolean flag
     type: type[Any] | ParamType
     default: Any
-    non_interactive_default: bool  # whether option should provide a default in non-interactive mode
+    non_interactive_default: (
+        bool  # whether option should provide a default in non-interactive mode
+    )
     prompt: str  # for interactive CLI
     help: str
     callback: Callable[..., Any]  # for validation
@@ -427,7 +430,7 @@ class FirecrestTransport(Transport):
             [f"  {k}: {v.get('help', '')}" for k, v in cls.auth_options.items()]
         )
 
-    def open(self) -> None:  # noqa: A003
+    def open(self) -> None:
         """Open the transport.
         This is a no-op for the REST-API, as there is no connection to open.
         """
@@ -977,14 +980,10 @@ class FirecrestTransport(Transport):
         if self.payoff_override is not None:
             return bool(self.payoff_override)
 
-        if (
+        return (
             isinstance(path, FcPath)
             and len(self.listdir(str(path), recursive=True)) > 3
-        ):
-            return True
-        if isinstance(path, Path) and len(os.listdir(path)) > 3:
-            return True
-        return False
+        ) or (isinstance(path, Path) and len(os.listdir(path)) > 3)
 
     def _puttreetar(
         self,
