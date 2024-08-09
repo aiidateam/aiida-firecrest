@@ -3,6 +3,12 @@
 [![Coverage Status][codecov-badge]][codecov-link]
 [![Code style: black][black-badge]][black-link]
 
+<br>
+<div align="left">
+  <img src="assets/logo.png" alt="Repository Logo" width="200" style="margin-top: 20px; margin-bottom: 20px;"/>
+</div>
+<br>
+
 AiiDA Transport/Scheduler plugins for interfacing with [FirecREST](https://products.cscs.ch/firecrest/), via [pyfirecrest](https://github.com/eth-cscs/pyfirecrest).
 
 It is currently tested against [FirecREST v2.6.0](https://github.com/eth-cscs/pyfirecrest/tree/v2.6.0).
