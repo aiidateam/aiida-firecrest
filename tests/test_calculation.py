@@ -20,8 +20,9 @@ def _no_retries():
     manage.get_config().set_option(MAX_ATTEMPTS_OPTION, max_attempts)
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.usefixtures("aiida_profile_clean", "no_retries")
-def test_calculation_basic(firecrest_computer: orm.Computer):
+def test_calculation_basic(firecrest_computer: orm.Computer, firecrest_config):
     """Test running a simple `arithmetic.add` calculation."""
     code = orm.InstalledCode(
         label="test_code",
@@ -35,6 +36,10 @@ def test_calculation_basic(firecrest_computer: orm.Computer):
     builder = code.get_builder()
     builder.x = orm.Int(1)
     builder.y = orm.Int(2)
+    builder.metadata.options.account = firecrest_config.builder_metadata_options_account
+    builder.metadata.options.custom_scheduler_commands = (
+        "#SBATCH --constraint=mc\n#SBATCH --mem=10K"
+    )
 
     _, node = engine.run_get_node(builder)
     assert node.is_finished_ok

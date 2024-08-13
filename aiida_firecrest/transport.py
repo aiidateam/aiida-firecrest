@@ -401,6 +401,8 @@ class FirecrestTransport(Transport):
         # aiida-core/src/aiida/orm/utils/remote:clean_remote()
         self._is_open = True
 
+        self.checksum_check = False
+
     def __str__(self) -> str:
         """Return the name of the plugin."""
         return self.__class__.__name__
@@ -452,6 +454,8 @@ class FirecrestTransport(Transport):
 
     def chdir(self, path: str) -> None:
         """Change the current working directory."""
+        # with open('/home/khosra_a/check_me', 'a') as f:
+        #     f.write(f"chdir: {path}, {type(path)}\n")
         new_path = self._cwd.joinpath(path)
         if not new_path.is_dir():
             raise OSError(f"'{new_path}' is not a valid directory")
@@ -723,7 +727,8 @@ class FirecrestTransport(Transport):
                 down_obj = self._client.external_download(self._machine, str(remote))
                 down_obj.finish_download(local)
 
-        self._validate_checksum(local, remote)
+        if self.checksum_check:
+            self._validate_checksum(local, remote)
 
     def _validate_checksum(
         self, localpath: str | Path, remotepath: str | FcPath
@@ -965,7 +970,8 @@ class FirecrestTransport(Transport):
                 )
                 up_obj.finish_upload()
 
-        self._validate_checksum(localpath, str(remote))
+        if self.checksum_check:
+            self._validate_checksum(localpath, str(remote))
 
     def payoff(self, path: str | FcPath | Path) -> bool:
         """

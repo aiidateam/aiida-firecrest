@@ -8,18 +8,20 @@ import os
 from pathlib import Path
 import shutil
 import stat
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar
+from unittest.mock import MagicMock
 from urllib.parse import urlparse
 
 from aiida import orm
 import firecrest
-import firecrest.path
 import pytest
 import requests
 
 
-class Values:
-    _DEFAULT_PAGE_SIZE: int = 25
+class Slurm:
+    """Save the submitted job ids for testing purposes."""
+
+    all_jobs: ClassVar[list] = []
 
 
 @pytest.fixture
@@ -75,7 +77,12 @@ class MockFirecrest:
             raise DeprecationWarning("local_file is not supported")
 
         if script_remote_path and not Path(script_remote_path).exists():
-            raise FileNotFoundError(f"File {script_remote_path} does not exist")
+            # Firecrest raises FirecrestException instead of FileNotFoundError
+            mock_response = MagicMock()
+            mock_response.status_code = 999  # I don't really know
+            mock_response.json.return_value = {"error": "Mock error message"}
+            raise firecrest.FirecrestException(mock_response)
+
         job_id = next(self.job_id_generator)
 
         # Filter out lines starting with '#SBATCH'
@@ -98,9 +105,18 @@ class MockFirecrest:
             os.chdir(Path(script_remote_path).parent)
             os.system(command)
 
+        Slurm.all_jobs.append(job_id)
+
         return {"jobid": job_id}
 
-    def poll_active(self, machine: str, jobs: list[str], page_number: int = 0):
+    def cancel(self, machine: str, job_id: str):
+        job_id = int(job_id)
+        if job_id in Slurm.all_jobs:
+            Slurm.all_jobs.remove(job_id)
+
+    def poll_active(
+        self, machine: str, jobs: list[str], page_number: int = 0, page_size: int = 25
+    ):
         response = []
         # 12 satets are defined in firecrest
         states = [
@@ -118,6 +134,11 @@ class MockFirecrest:
             "COMPLETING",
         ]
         for i in range(len(jobs)):
+            if int(jobs[i]) not in Slurm.all_jobs:
+                mock_response = MagicMock()
+                mock_response.status_code = 999  # I don't really know
+                mock_response.json.return_value = {"error": "Invalid job id"}
+                raise firecrest.FirecrestException([mock_response])
             response.append(
                 {
                     "job_data_err": "",
@@ -139,11 +160,7 @@ class MockFirecrest:
                 }
             )
 
-        return response[
-            page_number
-            * Values._DEFAULT_PAGE_SIZE : (page_number + 1)
-            * Values._DEFAULT_PAGE_SIZE
-        ]
+        return response[page_number * page_size : (page_number + 1) * page_size]
 
     def whoami(self, machine: str):
         assert machine == "MACHINE_NAME"
@@ -383,6 +400,7 @@ class ComputerFirecrestConfig:
     temp_directory: str
     workdir: str
     api_version: str
+    builder_metadata_options_account: str
     small_file_size_mb: float = 1.0
 
 
@@ -514,4 +532,5 @@ def firecrest_config(
             small_file_size_mb=1.0,
             temp_directory=str(_temp_directory),
             api_version="2",
+            builder_metadata_options_account="",
         )
