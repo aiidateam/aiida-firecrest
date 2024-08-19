@@ -36,10 +36,10 @@ def test_calculation_basic(firecrest_computer: orm.Computer, firecrest_config):
     builder = code.get_builder()
     builder.x = orm.Int(1)
     builder.y = orm.Int(2)
-    builder.metadata.options.account = firecrest_config.builder_metadata_options_account
-    builder.metadata.options.custom_scheduler_commands = (
-        "#SBATCH --constraint=mc\n#SBATCH --mem=10K"
+    custom_scheduler_commands = "\n".join(
+        firecrest_config.builder_metadata_options_custom_scheduler_commands
     )
+    builder.metadata.options.custom_scheduler_commands = custom_scheduler_commands
 
     _, node = engine.run_get_node(builder)
     assert node.is_finished_ok

@@ -454,8 +454,6 @@ class FirecrestTransport(Transport):
 
     def chdir(self, path: str) -> None:
         """Change the current working directory."""
-        # with open('/home/khosra_a/check_me', 'a') as f:
-        #     f.write(f"chdir: {path}, {type(path)}\n")
         new_path = self._cwd.joinpath(path)
         if not new_path.is_dir():
             raise OSError(f"'{new_path}' is not a valid directory")

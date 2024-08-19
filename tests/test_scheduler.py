@@ -23,18 +23,20 @@ def test_submit_job(firecrest_computer: orm.Computer, firecrest_config, tmpdir: 
     with pytest.raises(SchedulerError):
         scheduler.submit_job(firecrest_config.workdir, "unknown.sh")
 
+    custom_scheduler_commands = "\n    ".join(
+        firecrest_config.builder_metadata_options_custom_scheduler_commands
+    )
+
     shell_script = f"""
     #!/bin/bash
     #SBATCH --no-requeue
-    #SBATCH --job-name="aiida-1929"
+    #SBATCH --job-name="aiida-1928"
     #SBATCH --get-user-env
     #SBATCH --output=_scheduler-stdout.txt
     #SBATCH --error=_scheduler-stderr.txt
-    #SBATCH --account={firecrest_config.builder_metadata_options_account}
     #SBATCH --nodes=1
     #SBATCH --ntasks-per-node=1
-    #SBATCH --constraint=mc
-    #SBATCH --mem=10K
+    {custom_scheduler_commands}
 
     echo 'hello world'
     """
@@ -60,13 +62,18 @@ def test_get_and_kill_jobs(
       also less billing for the user.
     Note: this test relies on a functional transport.put() method.
     """
+    import time
+
     transport = firecrest_computer.get_transport()
     scheduler = FirecrestScheduler()
     scheduler.set_transport(transport)
 
-    # don't raise in case of invalid job id
+    # verify that no error is raised in the case of an invalid job id 000
     scheduler.get_jobs(["000"])
 
+    custom_scheduler_commands = "\n    ".join(
+        firecrest_config.builder_metadata_options_custom_scheduler_commands
+    )
     shell_script = f"""
     #!/bin/bash
     #SBATCH --no-requeue
@@ -74,11 +81,9 @@ def test_get_and_kill_jobs(
     #SBATCH --get-user-env
     #SBATCH --output=_scheduler-stdout.txt
     #SBATCH --error=_scheduler-stderr.txt
-    #SBATCH --account={firecrest_config.builder_metadata_options_account}
     #SBATCH --nodes=1
     #SBATCH --ntasks-per-node=1
-    #SBATCH --constraint=mc
-    #SBATCH --mem=10K
+    {custom_scheduler_commands}
 
     sleep 180
     """
@@ -104,10 +109,15 @@ def test_get_and_kill_jobs(
     for jobid in joblist:
         scheduler.kill_job(jobid)
 
-    # sometimes it takes time for the server to respond
-    sleep(5)
+    # sometimes it takes time for the server to actually kill the jobs
+    timeout_kill = 5  # seconds
+    start_time = time.time()
+    while time.time() - start_time < timeout_kill:
+        result = scheduler.get_jobs(joblist)
+        if not len(result):
+            break
+        sleep(0.5)
 
-    result = scheduler.get_jobs(joblist)
     assert not len(result)
 
 

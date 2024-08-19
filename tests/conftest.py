@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import itertools
 import json
@@ -390,7 +390,21 @@ class MockClientCredentialsAuth:
 
 @dataclass
 class ComputerFirecrestConfig:
-    """Configuration of a computer using FirecREST as transport plugin."""
+    """Configuration of a computer using FirecREST as transport plugin.
+
+    Args:
+
+        url: The URL of the FirecREST server.
+        token_uri: The URI to receive  tokens.
+        client_id: The client ID for the client credentials.
+        client_secret: The client secret for the client credentials.
+        compute_resource: The name of the compute resource. This is the name of the machine.
+        temp_directory: A temporary directory on the machine for transient zip files.
+        workdir: The aiida working directory on the machine.
+        api_version: The version of the FirecREST API.
+        builder_metadata_options_custom_scheduler_commands: a list of custom scheduler commands when submitting a job,
+          for example ["#SBATCH --account=mr32", "#SBATCH --constraint=mc", "#SBATCH --mem=10K"].
+        small_file_size_mb: The maximum file size for direct upload & download."""
 
     url: str
     token_uri: str
@@ -400,8 +414,10 @@ class ComputerFirecrestConfig:
     temp_directory: str
     workdir: str
     api_version: str
-    builder_metadata_options_account: str
     small_file_size_mb: float = 1.0
+    builder_metadata_options_custom_scheduler_commands: list[str] = field(
+        default_factory=list
+    )
 
 
 class RequestTelemetry:
@@ -532,5 +548,5 @@ def firecrest_config(
             small_file_size_mb=1.0,
             temp_directory=str(_temp_directory),
             api_version="2",
-            builder_metadata_options_account="",
+            builder_metadata_options_custom_scheduler_commands=[],
         )
