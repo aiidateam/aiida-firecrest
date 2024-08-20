@@ -1,46 +1,124 @@
 from pathlib import Path
+import textwrap
+from time import sleep
 
 from aiida import orm
+from aiida.schedulers import SchedulerError
 from aiida.schedulers.datastructures import CodeRunMode, JobTemplate
 import pytest
 
 from aiida_firecrest.scheduler import FirecrestScheduler
-from conftest import Values
 
 
 @pytest.mark.usefixtures("aiida_profile_clean")
-def test_submit_job(firecrest_computer: orm.Computer, tmp_path: Path):
+def test_submit_job(firecrest_computer: orm.Computer, firecrest_config, tmpdir: Path):
+    """Test submitting a job to the scheduler.
+    Note: this test relies on a functional transport.put() method."""
+
     transport = firecrest_computer.get_transport()
     scheduler = FirecrestScheduler()
     scheduler.set_transport(transport)
 
-    with pytest.raises(FileNotFoundError):
-        scheduler.submit_job(transport.getcwd(), "unknown.sh")
+    # raise error if file not found
+    with pytest.raises(SchedulerError):
+        scheduler.submit_job(firecrest_config.workdir, "unknown.sh")
 
-    _script = Path(tmp_path / "job.sh")
-    _script.write_text("#!/bin/bash\n\necho 'hello world'")
+    custom_scheduler_commands = "\n    ".join(
+        firecrest_config.builder_metadata_options_custom_scheduler_commands
+    )
 
-    job_id = scheduler.submit_job(transport.getcwd(), _script)
-    # this is how aiida expects the job_id to be returned
+    shell_script = f"""
+    #!/bin/bash
+    #SBATCH --no-requeue
+    #SBATCH --job-name="aiida-1928"
+    #SBATCH --get-user-env
+    #SBATCH --output=_scheduler-stdout.txt
+    #SBATCH --error=_scheduler-stderr.txt
+    #SBATCH --nodes=1
+    #SBATCH --ntasks-per-node=1
+    {custom_scheduler_commands}
+
+    echo 'hello world'
+    """
+
+    dedented_script = textwrap.dedent(shell_script).strip()
+    Path(tmpdir / "job.sh").write_text(dedented_script)
+    remote_ = transport._cwd.joinpath(firecrest_config.workdir, "job.sh")
+    transport.put(tmpdir / "job.sh", remote_)
+
+    job_id = scheduler.submit_job(firecrest_config.workdir, "job.sh")
+
     assert isinstance(job_id, str)
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.usefixtures("aiida_profile_clean")
-def test_get_jobs(firecrest_computer: orm.Computer):
+def test_get_and_kill_jobs(
+    firecrest_computer: orm.Computer, firecrest_config, tmpdir: Path
+):
+    """Test getting and killing jobs from the scheduler.
+    We test the two together for performance reasons, as this test might run against
+      a real server and we don't want to leave parasitic jobs behind.
+      also less billing for the user.
+    Note: this test relies on a functional transport.put() method.
+    """
+    import time
+
     transport = firecrest_computer.get_transport()
     scheduler = FirecrestScheduler()
     scheduler.set_transport(transport)
 
-    # test pagaination
-    scheduler._DEFAULT_PAGE_SIZE = 2
-    Values._DEFAULT_PAGE_SIZE = 2
+    # verify that no error is raised in the case of an invalid job id 000
+    scheduler.get_jobs(["000"])
 
-    joblist = ["111", "222", "333", "444", "555"]
+    custom_scheduler_commands = "\n    ".join(
+        firecrest_config.builder_metadata_options_custom_scheduler_commands
+    )
+    shell_script = f"""
+    #!/bin/bash
+    #SBATCH --no-requeue
+    #SBATCH --job-name="aiida-1929"
+    #SBATCH --get-user-env
+    #SBATCH --output=_scheduler-stdout.txt
+    #SBATCH --error=_scheduler-stderr.txt
+    #SBATCH --nodes=1
+    #SBATCH --ntasks-per-node=1
+    {custom_scheduler_commands}
+
+    sleep 180
+    """
+
+    joblist = []
+    dedented_script = textwrap.dedent(shell_script).strip()
+    Path(tmpdir / "job.sh").write_text(dedented_script)
+    remote_ = transport._cwd.joinpath(firecrest_config.workdir, "job.sh")
+    transport.put(tmpdir / "job.sh", remote_)
+
+    for _ in range(5):
+        joblist.append(scheduler.submit_job(firecrest_config.workdir, "job.sh"))
+
+    # test pagaination is working
+    scheduler._DEFAULT_PAGE_SIZE = 2
     result = scheduler.get_jobs(joblist)
     assert len(result) == 5
     for i in range(5):
-        assert result[i].job_id == str(joblist[i])
+        assert result[i].job_id in joblist
         # TODO: one could check states as well
+
+    # test kill jobs
+    for jobid in joblist:
+        scheduler.kill_job(jobid)
+
+    # sometimes it takes time for the server to actually kill the jobs
+    timeout_kill = 5  # seconds
+    start_time = time.time()
+    while time.time() - start_time < timeout_kill:
+        result = scheduler.get_jobs(joblist)
+        if not len(result):
+            break
+        sleep(0.5)
+
+    assert not len(result)
 
 
 def test_write_script_full():
@@ -68,9 +146,9 @@ def test_write_script_full():
     #SBATCH --mem=1
     test_command
     """
-    expectaion_flat = "\n".join(line.strip() for line in expectaion.splitlines()).strip(
-        "\n"
-    )
+    expectation_flat = "\n".join(
+        line.strip() for line in expectaion.splitlines()
+    ).strip("\n")
     scheduler = FirecrestScheduler()
     template = JobTemplate(
         {
@@ -98,7 +176,7 @@ def test_write_script_full():
         }
     )
     try:
-        assert scheduler.get_submit_script(template).rstrip() == expectaion_flat
+        assert scheduler.get_submit_script(template).rstrip() == expectation_flat
     except AssertionError:
         print(scheduler.get_submit_script(template).rstrip())
         print(expectaion)
@@ -116,9 +194,9 @@ def test_write_script_minimal():
     #SBATCH --ntasks-per-node=1
     """
 
-    expectaion_flat = "\n".join(line.strip() for line in expectaion.splitlines()).strip(
-        "\n"
-    )
+    expectation_flat = "\n".join(
+        line.strip() for line in expectaion.splitlines()
+    ).strip("\n")
     scheduler = FirecrestScheduler()
     template = JobTemplate(
         {
@@ -131,7 +209,7 @@ def test_write_script_minimal():
     )
 
     try:
-        assert scheduler.get_submit_script(template).rstrip() == expectaion_flat
+        assert scheduler.get_submit_script(template).rstrip() == expectation_flat
     except AssertionError:
         print(scheduler.get_submit_script(template).rstrip())
         print(expectaion)

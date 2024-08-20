@@ -150,6 +150,27 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
     assert not Path(_local_download / "remote_link").is_symlink()
     assert Path(_local_download / "remote_link").read_text() == "file1"
 
+    # test the self.checksum_check
+    with patch.object(
+        transport, "_validate_checksum", autospec=True
+    ) as mock_validate_checksum:
+        transport.checksum_check = True
+        transport.putfile(_local / "file1", _remote / "file1_checksum")
+        transport.getfile(
+            _remote / "file1_checksum", _local_download / "file1_checksum"
+        )
+    assert mock_validate_checksum.call_count == 2
+
+    with patch.object(
+        transport, "_validate_checksum", autospec=True
+    ) as mock_validate_checksum:
+        transport.checksum_check = False
+        transport.putfile(_local / "file1", _remote / "file1_checksum2")
+        transport.getfile(
+            _remote / "file1_checksum2", _local_download / "file1_checksum2"
+        )
+    assert mock_validate_checksum.call_count == 0
+
 
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_remove(firecrest_computer: orm.Computer, tmpdir: Path):

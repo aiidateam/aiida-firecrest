@@ -221,14 +221,17 @@ class FirecrestScheduler(Scheduler):
             try:
                 for page_iter in itertools.count():
                     results += transport._client.poll_active(
-                        transport._machine, jobs, page_number=page_iter
+                        transport._machine,
+                        jobs,
+                        page_number=page_iter,
+                        page_size=self._DEFAULT_PAGE_SIZE,
                     )
                     if len(results) < self._DEFAULT_PAGE_SIZE * (page_iter + 1):
                         break
             except FirecrestException as exc:
-                # firecrest returns error if the job is completed
                 # TODO: check what type of error is returned and handle it properly
-                if "Invalid job id specified" not in str(exc):
+                if "Invalid job id" not in str(exc):
+                    # firecrest returns error if the job is completed, while aiida expect a silent return
                     raise SchedulerError(str(exc)) from exc
         job_list = []
         for raw_result in results:
