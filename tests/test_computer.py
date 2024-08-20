@@ -107,9 +107,10 @@ def test_validate_temp_directory(
     ).exists()
 
 
-def test_dynamic_info(firecrest_config, monkeypatch, tmpdir: Path):
+def test_dynamic_info_direct_size(firecrest_config, monkeypatch, tmpdir: Path):
     from aiida_firecrest.transport import _dynamic_info_direct_size
 
+    assert monkeypatch is not None
     monkeypatch.setattr("click.echo", lambda x: None)
     ctx = Mock()
     ctx.params = {
@@ -130,3 +131,28 @@ def test_dynamic_info(firecrest_config, monkeypatch, tmpdir: Path):
     # note: user cannot enter negative numbers anyways, click raise as this shoule be float not str
     result = _dynamic_info_direct_size(ctx, None, 10)
     assert result == 10
+
+
+def test_dynamic_info_firecrest_version(firecrest_config, monkeypatch, tmpdir: Path):
+
+    from aiida_firecrest.transport import _dynamic_info_firecrest_version
+
+    monkeypatch.setattr("click.echo", lambda x: None)
+    ctx = Mock()
+    ctx.params = {
+        "url": f"{firecrest_config.url}",
+        "token_uri": f"{firecrest_config.token_uri}",
+        "client_id": f"{firecrest_config.client_id}",
+        "client_secret": f"{firecrest_config.client_secret}",
+        "compute_resource": f"{firecrest_config.compute_resource}",
+        "temp_directory": f"{firecrest_config.temp_directory}",
+        "api_version": f"{firecrest_config.api_version}",
+    }
+
+    # should catch FIRECREST_VERSION if value is not provided
+    result = _dynamic_info_firecrest_version(ctx, None, "0")
+    assert isinstance(result, str)
+
+    # should use the value if provided
+    result = _dynamic_info_firecrest_version(ctx, None, "10.10.10")
+    assert result == "10.10.10"
