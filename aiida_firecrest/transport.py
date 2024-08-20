@@ -158,16 +158,31 @@ def _dynamic_info_firecrest_version(
         small_file_size_mb=0.0,
         api_version="100.0.0",  # version is irrelevant here
     )
+
+    parameters = transport._client.parameters()
     try:
-        transport.listdir(transport._cwd.joinpath(temp_directory), recursive=True)
-        _version = "1.16.0"
-    except Exception:
-        # all sort of exceptions can be raised here, but we don't care. Since this is just a workaround
-        _version = "1.15.0"
+        info = next(
+            (
+                item
+                for item in parameters["general"]  # type: ignore[typeddict-item]
+                if item["name"] == "FIRECREST_VERSION"
+            ),
+            None,
+        )
+        if info is not None:
+            _version = str(info["value"])
+        else:
+            raise KeyError
+    except KeyError as err:
+        raise click.BadParameter(
+            "Could not get the version of the FirecREST server"
+        ) from err
+
+    if parse(_version) < parse("1.15.0"):
+        raise click.BadParameter(f"FirecREST api version {_version} is not supported")
 
     click.echo(
-        click.style("Fireport: ", bold=True, fg="magenta")
-        + f"Deployed version of FirecREST api: v{_version}"
+        click.style("Fireport: ", bold=True, fg="magenta") + f"FirecRESTapi: {_version}"
     )
     return _version
 

@@ -324,6 +324,20 @@ class MockFirecrest:
                     "value": "Slurm",
                 }
             ],
+            "general": [
+                {
+                    "description": "FirecREST version.",
+                    "name": "FIRECREST_VERSION",
+                    "unit": "",
+                    "value": "v1.16.1-dev.9",
+                },
+                {
+                    "description": "FirecREST build timestamp.",
+                    "name": "FIRECREST_BUILD",
+                    "unit": "",
+                    "value": "2024-08-16T15:58:47Z",
+                },
+            ],
             "storage": [
                 {
                     "description": "Type of object storage, like `swift`, `s3v2` or `s3v4`.",
@@ -361,17 +375,13 @@ class MockFirecrest:
             ],
             "utilities": [
                 {
-                    "description": "The maximum allowable file size for various operations"
-                    " of the utilities microservice",
+                    "description": "The maximum allowable file size for various operations of the utilities microservice.",
                     "name": "UTILITIES_MAX_FILE_SIZE",
                     "unit": "MB",
                     "value": "5",
                 },
                 {
-                    "description": (
-                        "Maximum time duration for executing the commands "
-                        "in the cluster for the utilities microservice."
-                    ),
+                    "description": "Maximum time duration for executing the commands in the cluster for the utilities microservice.",
                     "name": "UTILITIES_TIMEOUT",
                     "unit": "seconds",
                     "value": "5",
