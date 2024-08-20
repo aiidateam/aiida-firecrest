@@ -392,19 +392,20 @@ class MockClientCredentialsAuth:
 class ComputerFirecrestConfig:
     """Configuration of a computer using FirecREST as transport plugin.
 
-    Args:
-
-        url: The URL of the FirecREST server.
-        token_uri: The URI to receive  tokens.
-        client_id: The client ID for the client credentials.
-        client_secret: The client secret for the client credentials.
-        compute_resource: The name of the compute resource. This is the name of the machine.
-        temp_directory: A temporary directory on the machine for transient zip files.
-        workdir: The aiida working directory on the machine.
-        api_version: The version of the FirecREST API.
-        builder_metadata_options_custom_scheduler_commands: a list of custom scheduler commands when submitting a job,
-          for example ["#SBATCH --account=mr32", "#SBATCH --constraint=mc", "#SBATCH --mem=10K"].
-        small_file_size_mb: The maximum file size for direct upload & download."""
+    :param url: The URL of the FirecREST server.
+    :param token_uri: The URI to receive  tokens.
+    :param client_id: The client ID for the client credentials.
+    :param client_secret: The client secret for the client credentials.
+    :param compute_resource: The name of the compute resource. This is the name of the machine.
+    :param temp_directory: A temporary directory on the machine for transient zip files.
+    :param workdir: The aiida working directory on the machine.
+    :param api_version: The version of the FirecREST API.
+    :param builder_metadata_options_custom_scheduler_commands: A list of custom
+           scheduler commands when submitting a job, for example
+           ["#SBATCH --account=mr32",
+            "#SBATCH --constraint=mc",
+            "#SBATCH --mem=10K"].
+    :param small_file_size_mb: The maximum file size for direct upload & download."""
 
     url: str
     token_uri: str
