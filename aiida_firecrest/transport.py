@@ -233,7 +233,8 @@ def _dynamic_info_direct_size(
 
 
 class FirecrestTransport(Transport):
-    """Transport interface for FirecREST."""
+    """Transport interface for FirecREST.
+    It must be used together with the 'firecrest' scheduler plugin."""
 
     # override these options, because they don't really make sense for a REST-API,
     # so we don't want the user having to provide them
@@ -418,17 +419,6 @@ class FirecrestTransport(Transport):
         if not isinstance(value, bool):
             raise ValueError("payoff_override must be a boolean value")
         self._payoff_override = value
-
-    @classmethod
-    def get_description(cls) -> str:
-        """Used by verdi to describe the plugin."""
-        return (
-            "A plugin to connect to a FirecREST server.\n"
-            "It must be used together with the 'firecrest' scheduler plugin.\n"
-            "Authentication parameters:\n"
-        ) + "\n".join(
-            [f"  {k}: {v.get('help', '')}" for k, v in cls.auth_options.items()]
-        )
 
     def open(self) -> None:
         """Open the transport.
