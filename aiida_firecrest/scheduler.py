@@ -22,7 +22,9 @@ if TYPE_CHECKING:
 
 
 class FirecrestScheduler(Scheduler):
-    """Scheduler interface for FirecREST."""
+    """Scheduler interface for FirecREST.
+    It must be used together with the 'firecrest' transport plugin.
+    """
 
     transport: FirecrestTransport
     _job_resource_class = SlurmJobResource
@@ -31,14 +33,6 @@ class FirecrestScheduler(Scheduler):
     }
     _logger = Scheduler._logger.getChild("firecrest")
     _DEFAULT_PAGE_SIZE = 25
-
-    @classmethod
-    def get_description(cls) -> str:
-        """Used by verdi to describe the plugin."""
-        return (
-            "A plugin to connect to a FirecREST server.\n"
-            "It must be used together with the 'firecrest' transport plugin.\n"
-        )
 
     def _get_submit_script_header(self, job_tmpl: JobTemplate) -> str:
         """
