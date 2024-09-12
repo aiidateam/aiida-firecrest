@@ -128,17 +128,28 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
 def _dynamic_info_firecrest_version(
     ctx: Context, param: InteractiveOption, value: str
 ) -> str:
-    """Find the version of the FirecREST server."""
-    # note: right now, unfortunately, the version is not exposed in the API.
-    # See issue https://github.com/eth-cscs/firecrest/issues/204
-    # so here we just develope a workaround to get the version from the server
-    # basically we check if extract/compress endpoint is available
+    """
+    Find the version of the FirecREST server.
+    This is a callback function for click, interface.
+    It's called during the parsing of the command line arguments, during `verdi computer configure` command.
+    If the user enters "None" as value, this function will connect to the server and get the version of the FirecREST server.
+    Otherwise, it will check if the version is supported.
+    """
 
     import click
+    from packaging.version import InvalidVersion
 
-    if value != "0":
+    if value != "None":
+        try:
+            parse(value)
+        except InvalidVersion as err:
+            # raise in case the version is not valid, e.g. latest, stable, etc.
+            raise click.BadParameter(f"Invalid input {value}") from err
+
         if parse(value) < parse("1.15.0"):
             raise click.BadParameter(f"FirecREST api version {value} is not supported")
+        # If version is provided by the user, and it's supported, we will just return it.
+        # No print confirmation is needed, to keep things less verbose.
         return value
 
     firecrest_url = ctx.params["url"]
@@ -174,13 +185,14 @@ def _dynamic_info_firecrest_version(
         else:
             raise KeyError
     except KeyError as err:
-        raise click.BadParameter(
-            "Could not get the version of the FirecREST server"
-        ) from err
+        click.echo("Could not get the version of the FirecREST server")
+        raise click.Abort() from err
 
     if parse(_version) < parse("1.15.0"):
-        raise click.BadParameter(f"FirecREST api version {_version} is not supported")
+        click.echo(f"FirecREST api version {_version} is not supported")
+        raise click.Abort()
 
+    # for the sake of uniformity, we will print the version in style only if dynamically retrieved.
     click.echo(
         click.style("Fireport: ", bold=True, fg="magenta") + f"FirecRESTapi: {_version}"
     )
@@ -322,7 +334,7 @@ class FirecrestTransport(Transport):
             "api_version",
             {
                 "type": str,
-                "default": "0",
+                "default": "None",
                 "non_interactive_default": True,
                 "prompt": "FirecREST api version [Enter 0 to get this info from server]",
                 "help": "The version of the FirecREST api deployed on the server",
