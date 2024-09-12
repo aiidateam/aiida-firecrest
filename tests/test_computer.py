@@ -163,14 +163,12 @@ def test_dynamic_info_firecrest_version(
     assert result == "10.10.10"
 
     # raise BadParameter if the version is not supported
-    with pytest.raises(BadParameter) as exc_info:
-        result = _dynamic_info_firecrest_version(ctx, None, "0.0.0")
-    assert "FirecREST api version 0.0.0 is not supported" in str(exc_info.value)
+    with pytest.raises(BadParameter, match=r".*FirecREST api version 0.0.0 is not supported.*")):
+       _dynamic_info_firecrest_version(ctx, None, "0.0.0")
 
     # raise BadParameter if the input is nonsense, latest, stable, etc.
-    with pytest.raises(BadParameter) as exc_info:
-        result = _dynamic_info_firecrest_version(ctx, None, "latest")
-    assert "Invalid input" in str(exc_info.value)
+    with pytest.raises(BadParameter, match=r".*Invalid input.*"):
+        _dynamic_info_firecrest_version(ctx, None, "latest")
 
     # in case could not get the version from the server, should abort, as it is a required parameter.
     with patch.object(MockFirecrest, "parameters", autospec=True) as mock_parameters:
