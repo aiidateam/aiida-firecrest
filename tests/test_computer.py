@@ -163,8 +163,10 @@ def test_dynamic_info_firecrest_version(
     assert result == "10.10.10"
 
     # raise BadParameter if the version is not supported
-    with pytest.raises(BadParameter, match=r".*FirecREST api version 0.0.0 is not supported.*"):
-       _dynamic_info_firecrest_version(ctx, None, "0.0.0")
+    with pytest.raises(
+        BadParameter, match=r".*FirecREST api version 0.0.0 is not supported.*"
+    ):
+        _dynamic_info_firecrest_version(ctx, None, "0.0.0")
 
     # raise BadParameter if the input is nonsense, latest, stable, etc.
     with pytest.raises(BadParameter, match=r".*Invalid input.*"):
