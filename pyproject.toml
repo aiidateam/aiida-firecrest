@@ -54,7 +54,7 @@ exclude = [
 
 [tool.ruff]
 line-length = 120
-extend-select = ["A", "B", "C4", "ICN", "ISC", "N", "RUF", "SIM"]
+lint.extend-select = ["A", "B", "C4", "ICN", "ISC", "N", "RUF", "SIM"]
 # extend-ignore = []
 
 [tool.isort]

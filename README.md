@@ -215,3 +215,6 @@ If these tests pass and the bug persists, consider providing a `config` file to 
 
 If the bug persists and test still passes, then most certainly it's a problem of `aiida-firecrest`.
 If not, probably the issue is from FirecREST, you might open an issue to [pyfirecrest](https://github.com/eth-cscs/pyfirecrest) or [`FirecREST`](https://github.com/eth-cscs/firecrest).
+
+### Acknowledgment:
+This project is supported by SwissTwins fundings.

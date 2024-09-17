@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import itertools
 import json
@@ -8,18 +8,20 @@ import os
 from pathlib import Path
 import shutil
 import stat
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar
+from unittest.mock import MagicMock
 from urllib.parse import urlparse
 
 from aiida import orm
 import firecrest
-import firecrest.path
 import pytest
 import requests
 
 
-class Values:
-    _DEFAULT_PAGE_SIZE: int = 25
+class Slurm:
+    """Save the submitted job ids for testing purposes."""
+
+    all_jobs: ClassVar[list] = []
 
 
 @pytest.fixture
@@ -75,7 +77,12 @@ class MockFirecrest:
             raise DeprecationWarning("local_file is not supported")
 
         if script_remote_path and not Path(script_remote_path).exists():
-            raise FileNotFoundError(f"File {script_remote_path} does not exist")
+            # Firecrest raises FirecrestException instead of FileNotFoundError
+            mock_response = MagicMock()
+            mock_response.status_code = 999  # I don't really know
+            mock_response.json.return_value = {"error": "Mock error message"}
+            raise firecrest.FirecrestException(mock_response)
+
         job_id = next(self.job_id_generator)
 
         # Filter out lines starting with '#SBATCH'
@@ -98,9 +105,18 @@ class MockFirecrest:
             os.chdir(Path(script_remote_path).parent)
             os.system(command)
 
+        Slurm.all_jobs.append(job_id)
+
         return {"jobid": job_id}
 
-    def poll_active(self, machine: str, jobs: list[str], page_number: int = 0):
+    def cancel(self, machine: str, job_id: str):
+        job_id = int(job_id)
+        if job_id in Slurm.all_jobs:
+            Slurm.all_jobs.remove(job_id)
+
+    def poll_active(
+        self, machine: str, jobs: list[str], page_number: int = 0, page_size: int = 25
+    ):
         response = []
         # 12 satets are defined in firecrest
         states = [
@@ -118,6 +134,11 @@ class MockFirecrest:
             "COMPLETING",
         ]
         for i in range(len(jobs)):
+            if int(jobs[i]) not in Slurm.all_jobs:
+                mock_response = MagicMock()
+                mock_response.status_code = 999  # I don't really know
+                mock_response.json.return_value = {"error": "Invalid job id"}
+                raise firecrest.FirecrestException([mock_response])
             response.append(
                 {
                     "job_data_err": "",
@@ -139,11 +160,7 @@ class MockFirecrest:
                 }
             )
 
-        return response[
-            page_number
-            * Values._DEFAULT_PAGE_SIZE : (page_number + 1)
-            * Values._DEFAULT_PAGE_SIZE
-        ]
+        return response[page_number * page_size : (page_number + 1) * page_size]
 
     def whoami(self, machine: str):
         assert machine == "MACHINE_NAME"
@@ -307,6 +324,20 @@ class MockFirecrest:
                     "value": "Slurm",
                 }
             ],
+            "general": [
+                {
+                    "description": "FirecREST version.",
+                    "name": "FIRECREST_VERSION",
+                    "unit": "",
+                    "value": "v1.16.1-dev.9",
+                },
+                {
+                    "description": "FirecREST build timestamp.",
+                    "name": "FIRECREST_BUILD",
+                    "unit": "",
+                    "value": "2024-08-16T15:58:47Z",
+                },
+            ],
             "storage": [
                 {
                     "description": "Type of object storage, like `swift`, `s3v2` or `s3v4`.",
@@ -344,17 +375,13 @@ class MockFirecrest:
             ],
             "utilities": [
                 {
-                    "description": "The maximum allowable file size for various operations"
-                    " of the utilities microservice",
+                    "description": "The maximum allowable file size for various operations of the utilities microservice.",
                     "name": "UTILITIES_MAX_FILE_SIZE",
                     "unit": "MB",
                     "value": "5",
                 },
                 {
-                    "description": (
-                        "Maximum time duration for executing the commands "
-                        "in the cluster for the utilities microservice."
-                    ),
+                    "description": "Maximum time duration for executing the commands in the cluster for the utilities microservice.",
                     "name": "UTILITIES_TIMEOUT",
                     "unit": "seconds",
                     "value": "5",
@@ -373,7 +400,22 @@ class MockClientCredentialsAuth:
 
 @dataclass
 class ComputerFirecrestConfig:
-    """Configuration of a computer using FirecREST as transport plugin."""
+    """Configuration of a computer using FirecREST as transport plugin.
+
+    :param url: The URL of the FirecREST server.
+    :param token_uri: The URI to receive  tokens.
+    :param client_id: The client ID for the client credentials.
+    :param client_secret: The client secret for the client credentials.
+    :param compute_resource: The name of the compute resource. This is the name of the machine.
+    :param temp_directory: A temporary directory on the machine for transient zip files.
+    :param workdir: The aiida working directory on the machine.
+    :param api_version: The version of the FirecREST API.
+    :param builder_metadata_options_custom_scheduler_commands: A list of custom
+           scheduler commands when submitting a job, for example
+           ["#SBATCH --account=mr32",
+            "#SBATCH --constraint=mc",
+            "#SBATCH --mem=10K"].
+    :param small_file_size_mb: The maximum file size for direct upload & download."""
 
     url: str
     token_uri: str
@@ -384,6 +426,9 @@ class ComputerFirecrestConfig:
     workdir: str
     api_version: str
     small_file_size_mb: float = 1.0
+    builder_metadata_options_custom_scheduler_commands: list[str] = field(
+        default_factory=list
+    )
 
 
 class RequestTelemetry:
@@ -514,4 +559,5 @@ def firecrest_config(
             small_file_size_mb=1.0,
             temp_directory=str(_temp_directory),
             api_version="2",
+            builder_metadata_options_custom_scheduler_commands=[],
         )
