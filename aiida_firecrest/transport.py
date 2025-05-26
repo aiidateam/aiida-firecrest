@@ -139,7 +139,7 @@ def _dynamic_info_firecrest_version(
     import click
     from packaging.version import InvalidVersion
 
-    if value != "None":
+    if value != "None" and value != "0":
         try:
             parse(value)
         except InvalidVersion as err:
@@ -175,7 +175,7 @@ def _dynamic_info_firecrest_version(
         info = next(
             (
                 item
-                for item in parameters["general"]  # type: ignore[typeddict-item]
+                for item in parameters["general"]
                 if item["name"] == "FIRECREST_VERSION"
             ),
             None,
@@ -1175,7 +1175,7 @@ class FirecrestTransport(Transport):
         """Return the username of the current user.
         return None if the username cannot be determined.
         """
-        return self._client.whoami(machine=self._machine)
+        return self._client.whoami(machine=self._machine)  # type: ignore [no-any-return]
 
     def gotocomputer_command(self, remotedir: str) -> str:
         """Not possible for REST-API.
