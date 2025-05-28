@@ -3,7 +3,7 @@ default_language_version:
 
 ci:
     autoupdate_schedule: monthly
-    autofix_prs: true
+    autofix_prs: false
 
 repos:
 
