@@ -495,7 +495,7 @@ def firecrest_config(
             firecrest_url=config.url,
             authorization=firecrest.ClientCredentialsAuth(
                 config.client_id,
-                Path(config.client_secret).read_text().strip(),
+                config.client_secret,
                 config.token_uri,
             ),
         )
