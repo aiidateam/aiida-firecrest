@@ -1,8 +1,8 @@
  {
-    "url": "",
-    "token_uri": "",
-    "client_id": "",
-    "client_secret": "",
+    "url": "http://localhost:8000/",
+    "token_uri": "http://localhost:8080/auth/realms/kcrealm/protocol/openid-connect/token",
+    "client_id": "firecrest-test-client",
+    "client_secret": "wZVHVIEd9dkJDh9hMKc6DTvkqXxnDttk",
     "compute_resource": "",
     "temp_directory": "",
     "small_file_size_mb": 5.0,
