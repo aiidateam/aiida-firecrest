@@ -1,9 +1,18 @@
+###########################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                     #
+# This file is part of the AiiDA code.                                    #
+#                                                                         #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
+# For further information on the license, see the LICENSE.txt file        #
+# For further information please visit http://www.aiida.net               #
+###########################################################################
 """Scheduler interface."""
 
 from __future__ import annotations
 
 import datetime
 import itertools
+from pathlib import Path
 import re
 import string
 import time
@@ -194,7 +203,7 @@ class FirecrestScheduler(Scheduler):
             try:
                 result = transport._client.submit(
                     transport._machine,
-                    script_remote_path=transport._get_path(working_directory, filename),
+                    script_remote_path=str(Path(working_directory).joinpath(filename)),
                 )
             except FirecrestException as exc:
                 raise SchedulerError(str(exc)) from exc

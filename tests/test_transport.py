@@ -1,3 +1,11 @@
+###########################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                     #
+# This file is part of the AiiDA code.                                    #
+#                                                                         #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
+# For further information on the license, see the LICENSE.txt file        #
+# For further information please visit http://www.aiida.net               #
+###########################################################################
 """
 Note: order of tests is important, as some tests are dependent on the previous ones.
 """
@@ -9,11 +17,13 @@ from unittest.mock import patch
 from aiida import orm
 import pytest
 
+from aiida_firecrest.transport import FcPath
+
 
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_mkdir(firecrest_computer: orm.Computer):
     transport = firecrest_computer.get_transport()
-    tmpdir = transport._temp_directory
+    tmpdir = Path(transport._temp_directory)
 
     _scratch = tmpdir / "sampledir"
     transport.mkdir(_scratch)
@@ -37,7 +47,7 @@ def test_mkdir(firecrest_computer: orm.Computer):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_is_dir(firecrest_computer: orm.Computer):
     transport = firecrest_computer.get_transport()
-    tmpdir = transport._temp_directory
+    tmpdir = Path(transport._temp_directory)
 
     _scratch = tmpdir / "sampledir"
     transport.mkdir(_scratch)
@@ -71,7 +81,7 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
     It's written this way to be compatible with the real server testings.
     """
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
@@ -138,9 +148,9 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
     #   for putfile()
     Path(_local / "file1").write_text("file1")
     transport.putfile(_local / "file1_link", _remote / "file1_link")
-    assert not transport._cwd.joinpath(
+    assert not transport.is_symlink(
         _remote / "file1_link"
-    ).is_symlink()  # should be copied as a file
+    )  # should be copied as a file
     transport.getfile(_remote / "file1_link", _local_download / "file1_link")
     assert Path(_local_download / "file1_link").read_text() == "file1"
     #   for getfile()
@@ -175,7 +185,7 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_remove(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote
     _local = tmpdir
@@ -183,11 +193,11 @@ def test_remove(firecrest_computer: orm.Computer, tmpdir: Path):
     Path(_local / "samplefile").touch()
 
     # remove a non-empty directory with rmtree()
-    _scratch = transport._cwd.joinpath(_remote / "sampledir")
-    _scratch.mkdir()
+    _scratch = FcPath(_remote / "sampledir")
+    transport.mkdir(_scratch)
     transport.putfile(_local / "samplefile", _remote / "sampledir" / "samplefile")
     transport.rmtree(_scratch)
-    assert not _scratch.exists()
+    assert not transport.path_exists(_scratch)
 
     # remove a non-empty directory should raise with rmdir()
     transport.mkdir(_remote / "sampledir")
@@ -197,17 +207,17 @@ def test_remove(firecrest_computer: orm.Computer, tmpdir: Path):
 
     # remove a file with remove()
     transport.remove(_remote / "sampledir" / "samplefile")
-    assert not transport._cwd.joinpath(_remote / "sampledir" / "samplefile").exists()
+    assert not transport.path_exists(_remote / "sampledir" / "samplefile")
 
     # remove a empty directory with rmdir
     transport.rmdir(_remote / "sampledir")
-    assert not _scratch.exists()
+    assert not transport.path_exists(_scratch)
 
 
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_is_file(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote
     _local = tmpdir
@@ -221,7 +231,7 @@ def test_is_file(firecrest_computer: orm.Computer, tmpdir: Path):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_symlink(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote
     _local = tmpdir
@@ -230,8 +240,7 @@ def test_symlink(firecrest_computer: orm.Computer, tmpdir: Path):
     transport.putfile(_local / "samplefile", _remote / "samplefile")
     transport.symlink(_remote / "samplefile", _remote / "samplelink")
 
-    _symlink = transport._cwd.joinpath(_remote / "samplelink")
-    assert _symlink.is_symlink()
+    assert transport.is_symlink(_remote / "samplelink")
     # TODO: check if the symlink is pointing to the correct file
     # for this we need further development of FcPath.resolve()
     # assert _symlink.resolve() == _remote / "samplefile"
@@ -240,7 +249,7 @@ def test_symlink(firecrest_computer: orm.Computer, tmpdir: Path):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_listdir(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote
     _local = tmpdir
@@ -297,7 +306,7 @@ def test_put(firecrest_computer: orm.Computer, tmpdir: Path):
     For faster testing, we mock the subfucntions and don't actually do it.
     """
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
@@ -345,7 +354,7 @@ def test_get(firecrest_computer: orm.Computer, tmpdir: Path):
     For faster testing, we mock the subfucntions and don't actually do it.
     """
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
@@ -414,7 +423,7 @@ def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     # transport.put('somepath/abc/', 'someremotepath/') --> assuming someremotepath exists, OSError:
     # cannot make someremotepath
 
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
     _local_download = tmpdir / "download"
@@ -491,14 +500,11 @@ def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     assert (
         Path(_local_download / "dir1" / "dir20_link" / "file3").read_text() == "file3"
     )
-    assert not transport._cwd.joinpath(_root / "dir1" / "file1_link").is_symlink()
-    assert not transport._cwd.joinpath(
-        _root / "dir1" / "dir2_link" / "file3"
-    ).is_symlink()
-    assert not transport._cwd.joinpath(_root / "dir1" / "file10_link").is_symlink()
-    assert not transport._cwd.joinpath(
-        _root / "dir1" / "dir20_link" / "file3"
-    ).is_symlink()
+    assert not transport.is_symlink(_root.joinpath("dir1", "file1_link"))
+    assert not transport.is_symlink(_root.joinpath("dir1", "dir2_link", "file3"))
+
+    assert not transport.is_symlink(_root.joinpath("dir1", "file10_link"))
+    assert not transport.is_symlink(_root.joinpath("dir1", "dir20_link", "file3"))
     # End of ASSERT block
 
     # If destination directory does exists, AiiDA expects transport make _local.name and write into it
@@ -547,14 +553,11 @@ def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     assert (
         Path(_local_download / "dir1" / "dir20_link" / "file3").read_text() == "file3"
     )
-    assert not transport._cwd.joinpath(_root / "dir1" / "file1_link").is_symlink()
-    assert not transport._cwd.joinpath(
-        _root / "dir1" / "dir2_link" / "file3"
-    ).is_symlink()
-    assert not transport._cwd.joinpath(_root / "dir1" / "file10_link").is_symlink()
-    assert not transport._cwd.joinpath(
-        _root / "dir1" / "dir20_link" / "file3"
-    ).is_symlink()
+    assert not transport.is_symlink(_root.joinpath("dir1", "file1_link"))
+    assert not transport.is_symlink(_root.joinpath("dir1", "dir2_link", "file3"))
+
+    assert not transport.is_symlink(_root.joinpath("dir1", "file10_link"))
+    assert not transport.is_symlink(_root.joinpath("dir1", "dir20_link", "file3"))
     # End of ASSERT block
 
 
@@ -579,7 +582,7 @@ def test_gettree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     # transport.get('someremotepath/abc', 'somepath/abc')--> if abc exist, create abc inside it ('somepath/abc/abc')
     # transport.get('someremotepath/abc', 'somepath/abc')--> if abc noexist,create abc inside it ('somepath/abc')
     # transport.get('somepath/abc', 'someremotepath/6889/abc') --> create everything, make_parent = True
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
     _remote = tmpdir_remote / "remotedir"
     _remote.mkdir()
     _local = tmpdir / "localdir"
@@ -666,7 +669,7 @@ def test_copy(firecrest_computer: orm.Computer, tmpdir: Path, to_test: str):
     elif to_test == "copytree":
         testing = transport.copytree
 
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
     _remote_1 = tmpdir_remote / "remotedir_1"
     _remote_2 = tmpdir_remote / "remotedir_2"
     _remote_1.mkdir()
@@ -736,8 +739,8 @@ def test_copy(firecrest_computer: orm.Computer, tmpdir: Path, to_test: str):
     assert Path(_local_download / "dir1" / "dir2_link").exists()
     assert Path(_local_download / "dir1" / "file1_link").read_text() == "file1"
     assert Path(_local_download / "dir1" / "dir2_link" / "file3").read_text() == "file3"
-    assert transport._cwd.joinpath(_root_2 / "dir1" / "file1_link").is_symlink()
-    assert transport._cwd.joinpath(_root_2 / "dir1" / "dir2_link").is_symlink()
+    assert transport.is_symlink(_root_2.joinpath("dir1", "file1_link"))
+    assert transport.is_symlink(_root_2.joinpath("dir1", "dir2_link"))
 
     # End of ASSERT block
 
@@ -756,7 +759,7 @@ def test_copyfile(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
     testing = transport.copyfile
 
-    tmpdir_remote = transport._temp_directory
+    tmpdir_remote = Path(transport._temp_directory)
     _remote_1 = tmpdir_remote / "remotedir_1"
     _remote_2 = tmpdir_remote / "remotedir_2"
     _for_upload = tmpdir / "forUpload"
@@ -804,6 +807,6 @@ def test_copyfile(firecrest_computer: orm.Computer, tmpdir: Path):
 
     # preserve links and don't follow them
     testing(_remote_1 / "file1_link", _remote_2 / "file1_link")
-    assert transport._cwd.joinpath(_remote_2 / "file1_link").is_symlink()
+    assert transport.is_symlink(_remote_2 / "file1_link")
     transport.getfile(_remote_2 / "file1_link", _for_download / "file1_link")
     assert Path(_for_download / "file1_link").read_text() == "file1"
