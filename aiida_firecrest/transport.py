@@ -1,3 +1,11 @@
+###########################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                     #
+# This file is part of the AiiDA code.                                    #
+#                                                                         #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
+# For further information on the license, see the LICENSE.txt file        #
+# For further information please visit http://www.aiida.net               #
+###########################################################################
 """Transport interface."""
 
 from __future__ import annotations
@@ -11,12 +19,12 @@ from pathlib import Path, PurePosixPath
 import posixpath
 import stat
 import tarfile
-from typing import Any, Callable, ClassVar, TypedDict, Union
+from typing import Any, Callable, ClassVar, TypedDict
 import uuid
 
 from aiida.cmdline.params.options.interactive import InteractiveOption
 from aiida.cmdline.params.options.overridable import OverridableOption
-from aiida.transports.transport import BlockingTransport, TransportPath
+from aiida.transports.transport import BlockingTransport
 from aiida.transports.util import FileAttribute
 from click.core import Context
 from click.types import ParamType
@@ -25,55 +33,18 @@ from firecrest.FirecrestException import HeaderException
 from firecrest.v1.BasicClient import Firecrest
 from packaging.version import Version, parse
 
-from aiida_firecrest.utils import _COMMON_HEADER_EXC, disable_fc_logging
+from aiida_firecrest.utils import (
+    _COMMON_HEADER_EXC,
+    FcPath,
+    TPath_Extended,
+    disable_fc_logging,
+)
 
 try:
     # available in python 3.11
     from typing import Self  # type: ignore
 except ImportError:
     from typing_extensions import Self
-
-
-class FcPath:
-    """A simple class to represent a path on the FirecREST server.
-    Note: since this path will be used for asynchronous operations,
-    and is solely used only across class:FirecrestTransport, therefor it does not
-    makes sense to develop routine methods like `exists`, `is_dir`, etc.
-
-    The only purpose of this class is to provide a simple way to represent a path
-    on the FirecREST server.
-    """
-
-    def __init__(self, path: str) -> None:
-        self.path = path
-
-    def __str__(self) -> str:
-        return str(self.path)
-
-    def __truediv__(self, other: str) -> FcPath:
-        return FcPath(posixpath.join(self.path, other))
-
-    def __fspath__(self) -> str:
-        """Return the path as a string for file system operations."""
-        return str(self.path)
-
-    @property
-    def parent(self) -> FcPath:
-        """Return the parent directory of this path."""
-        return FcPath(posixpath.dirname(self.path))
-
-    @property
-    def name(self) -> str:
-        """Return the name of this path."""
-        return posixpath.basename(self.path)
-
-    def joinpath(self, *args: str | FcPath) -> FcPath:
-        """Join this path with the given arguments."""
-        return FcPath(posixpath.join(self.path, *(str(arg) for arg in args)))
-
-    def resolve(self) -> FcPath:
-        """Resolve the path to an absolute path."""
-        return FcPath(posixpath.abspath(self.path))
 
 
 class ValidAuthOption(TypedDict, total=False):
@@ -308,9 +279,6 @@ def _dynamic_info_direct_size(
     )
 
     return small_file_size_mb
-
-
-TPath_Extended = Union[TransportPath, FcPath]
 
 
 class FirecrestTransport(BlockingTransport):
@@ -732,7 +700,7 @@ class FirecrestTransport(BlockingTransport):
 
         remotedestination = str(remotedestination)
 
-        target_path = PurePosixPath(str(remotesource))
+        target_path = PurePosixPath(remotesource)
         if not target_path.is_absolute():
             raise ValueError("target(remotesource) must be an absolute path")
         with self.convert_header_exceptions():
@@ -870,8 +838,8 @@ class FirecrestTransport(BlockingTransport):
             note: we don't support downloading symlinks, so dereference should always be True
 
         """
-        remotepath = FcPath(str(remotepath))
-        local = Path(str(localpath))
+        remotepath = FcPath(remotepath)
+        local = Path(localpath)
 
         if not dereference:
             raise NotImplementedError(
@@ -1001,8 +969,8 @@ class FirecrestTransport(BlockingTransport):
             note: dereference should be always True, otherwise the symlinks will not be functional.
         """
 
-        remotepath = FcPath(str(remotepath))
-        local = Path(str(localpath))
+        remotepath = FcPath(remotepath)
+        local = Path(localpath)
 
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
@@ -1102,7 +1070,7 @@ class FirecrestTransport(BlockingTransport):
             note: dereference should be always True, otherwise the symlinks will not be functional.
         """
 
-        remotepath = FcPath(str(remotepath))
+        remotepath = FcPath(remotepath)
         localpath = str(localpath)
 
         if self.isdir(remotepath):
@@ -1138,8 +1106,8 @@ class FirecrestTransport(BlockingTransport):
 
         """
 
-        localpath = Path(str(localpath))
-        remotepath = FcPath(str(remotepath))
+        localpath = Path(localpath)
+        remotepath = FcPath(remotepath)
 
         if not dereference:
             raise NotImplementedError(
@@ -1224,7 +1192,7 @@ class FirecrestTransport(BlockingTransport):
 
         _ = uuid.uuid4()
 
-        localpath = Path(str(localpath))
+        localpath = Path(localpath)
         remotepath = str(remotepath)
 
         tarpath = localpath.parent.joinpath(f"temp_{_}.tar")
@@ -1265,8 +1233,8 @@ class FirecrestTransport(BlockingTransport):
         if not dereference:
             raise NotImplementedError
 
-        localpath = Path(str(localpath))
-        remote = FcPath(str(remotepath))
+        localpath = Path(localpath)
+        remote = FcPath(remotepath)
 
         if not localpath.is_absolute():
             raise ValueError("The localpath must be an absolute path")
@@ -1322,13 +1290,13 @@ class FirecrestTransport(BlockingTransport):
         if not dereference:
             raise NotImplementedError
 
-        local = Path(str(localpath))
+        local = Path(localpath)
         remotepath = str(remotepath)
         if not local.is_absolute():
             raise ValueError("The localpath must be an absolute path")
 
         if self.has_magic(str(localpath)):
-            for item in self.iglob(localpath):  # type: ignore
+            for item in self.iglob(str(localpath)):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
                 self.put(
