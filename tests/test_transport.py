@@ -23,7 +23,7 @@ from aiida_firecrest.transport import FcPath
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_mkdir(firecrest_computer: orm.Computer):
     transport = firecrest_computer.get_transport()
-    tmpdir = Path(str(transport._temp_directory))
+    tmpdir = Path(transport._temp_directory)
 
     _scratch = tmpdir / "sampledir"
     transport.mkdir(_scratch)
@@ -47,7 +47,7 @@ def test_mkdir(firecrest_computer: orm.Computer):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_is_dir(firecrest_computer: orm.Computer):
     transport = firecrest_computer.get_transport()
-    tmpdir = Path(str(transport._temp_directory))
+    tmpdir = Path(transport._temp_directory)
 
     _scratch = tmpdir / "sampledir"
     transport.mkdir(_scratch)
@@ -81,7 +81,7 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
     It's written this way to be compatible with the real server testings.
     """
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
@@ -185,7 +185,7 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_remove(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote
     _local = tmpdir
@@ -217,7 +217,7 @@ def test_remove(firecrest_computer: orm.Computer, tmpdir: Path):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_is_file(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote
     _local = tmpdir
@@ -231,7 +231,7 @@ def test_is_file(firecrest_computer: orm.Computer, tmpdir: Path):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_symlink(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote
     _local = tmpdir
@@ -249,7 +249,7 @@ def test_symlink(firecrest_computer: orm.Computer, tmpdir: Path):
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_listdir(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote
     _local = tmpdir
@@ -306,7 +306,7 @@ def test_put(firecrest_computer: orm.Computer, tmpdir: Path):
     For faster testing, we mock the subfucntions and don't actually do it.
     """
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
@@ -354,7 +354,7 @@ def test_get(firecrest_computer: orm.Computer, tmpdir: Path):
     For faster testing, we mock the subfucntions and don't actually do it.
     """
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
 
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
@@ -423,7 +423,7 @@ def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     # transport.put('somepath/abc/', 'someremotepath/') --> assuming someremotepath exists, OSError:
     # cannot make someremotepath
 
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
     _local_download = tmpdir / "download"
@@ -582,7 +582,7 @@ def test_gettree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     # transport.get('someremotepath/abc', 'somepath/abc')--> if abc exist, create abc inside it ('somepath/abc/abc')
     # transport.get('someremotepath/abc', 'somepath/abc')--> if abc noexist,create abc inside it ('somepath/abc')
     # transport.get('somepath/abc', 'someremotepath/6889/abc') --> create everything, make_parent = True
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
     _remote = tmpdir_remote / "remotedir"
     _remote.mkdir()
     _local = tmpdir / "localdir"
@@ -669,7 +669,7 @@ def test_copy(firecrest_computer: orm.Computer, tmpdir: Path, to_test: str):
     elif to_test == "copytree":
         testing = transport.copytree
 
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
     _remote_1 = tmpdir_remote / "remotedir_1"
     _remote_2 = tmpdir_remote / "remotedir_2"
     _remote_1.mkdir()
@@ -759,7 +759,7 @@ def test_copyfile(firecrest_computer: orm.Computer, tmpdir: Path):
     transport = firecrest_computer.get_transport()
     testing = transport.copyfile
 
-    tmpdir_remote = Path(str(transport._temp_directory))
+    tmpdir_remote = Path(transport._temp_directory)
     _remote_1 = tmpdir_remote / "remotedir_1"
     _remote_2 = tmpdir_remote / "remotedir_2"
     _for_upload = tmpdir / "forUpload"

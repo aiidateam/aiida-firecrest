@@ -28,7 +28,7 @@ except ImportError:
 class FcPath:
     """A simple class to represent a path on the FirecREST server.
     Note: since this path will be used for asynchronous operations,
-    and is solely used only across class:FirecrestTransport, therefor it does not
+    and is solely used only across class:FirecrestTransport, therefore it does not
     makes sense to develop routine methods like `exists`, `is_dir`, etc.
 
     The only purpose of this class is to provide a simple way to represent a path
