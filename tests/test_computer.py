@@ -87,7 +87,7 @@ def test_validate_temp_directory(
         ctx, None, Path(_remote / "nonexisting").as_posix()
     )
     assert result == Path(_remote / "nonexisting").as_posix()
-    assert transport._cwd.joinpath(_remote / "nonexisting").exists()
+    assert transport.path_exists(Path(_remote / "nonexisting"))
 
     # should get a confirmation if the directory exists and is not empty
     monkeypatch.setattr("click.confirm", lambda x: False)
@@ -102,9 +102,7 @@ def test_validate_temp_directory(
         ctx, None, Path(_remote / "temp_on_server_directory").as_posix()
     )
     assert result == Path(_remote / "temp_on_server_directory").as_posix()
-    assert not transport._cwd.joinpath(
-        _remote / "temp_on_server_directory" / "_.txt"
-    ).exists()
+    assert not transport.path_exists(_remote / "temp_on_server_directory" / "_.txt")
 
 
 def test_dynamic_info_direct_size(firecrest_config, monkeypatch, tmpdir: Path):

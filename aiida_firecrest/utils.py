@@ -5,8 +5,8 @@ from contextlib import contextmanager
 from typing import Any, Callable
 
 from aiida.schedulers import SchedulerError
-from firecrest.BasicClient import logger as FcLogger  # noqa: N812
 from firecrest.FirecrestException import HeaderException
+from firecrest.v1.BasicClient import logger as fc_logger
 
 
 @contextmanager
@@ -16,12 +16,12 @@ def disable_fc_logging() -> Iterator[None]:
     This is useful when calling methods that are expected to fail,
     such as `exists` or `is_dir`, as it avoids polluting the log with errors.
     """
-    level = FcLogger.level
-    FcLogger.setLevel(60)
+    level = fc_logger.level
+    fc_logger.setLevel(60)
     try:
         yield
     finally:
-        FcLogger.setLevel(level)
+        fc_logger.setLevel(level)
 
 
 @contextmanager
@@ -33,7 +33,7 @@ def convert_header_exceptions(
 
     Default conversions are:
     - X-Timeout: ApiTimeoutError
-    - X-Machine-Does-Not-Exist: MachineDoesNotExist
+    - X-Machine-Does-Not-Exist: MachineDoesNotExistError
     - X-Machine-Not-Available: PermissionError
     - X-Permission-Denied: PermissionError
     - X-Not-Found: FileNotFoundError
@@ -96,3 +96,16 @@ class FileSizeExceededError(OSError):
         if "path" in data:
             msg += f": {data['path']}"
         super().__init__(msg)
+
+
+_COMMON_HEADER_EXC: dict[str, Callable[[dict[str, Any]], Exception] | None] = {
+    "X-Timeout": ApiTimeoutError,
+    "X-Machine-Does-Not-Exist": MachineDoesNotExistError,
+    "X-Machine-Not-Available": PermissionError,
+    "X-Permission-Denied": PermissionError,
+    "X-Not-Found": FileNotFoundError,
+    "X-Not-A-Directory": NotADirectoryError,
+    "X-Exists": FileExistsError,
+    "X-Invalid-Path": FileNotFoundError,
+    "X-A-Directory": IsADirectoryError,
+}

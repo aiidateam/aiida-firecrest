@@ -43,7 +43,7 @@ def test_submit_job(firecrest_computer: orm.Computer, firecrest_config, tmpdir: 
 
     dedented_script = textwrap.dedent(shell_script).strip()
     Path(tmpdir / "job.sh").write_text(dedented_script)
-    remote_ = transport._cwd.joinpath(firecrest_config.workdir, "job.sh")
+    remote_ = Path(firecrest_config.workdir).joinpath("job.sh")
     transport.put(tmpdir / "job.sh", remote_)
 
     job_id = scheduler.submit_job(firecrest_config.workdir, "job.sh")
@@ -91,7 +91,7 @@ def test_get_and_kill_jobs(
     joblist = []
     dedented_script = textwrap.dedent(shell_script).strip()
     Path(tmpdir / "job.sh").write_text(dedented_script)
-    remote_ = transport._cwd.joinpath(firecrest_config.workdir, "job.sh")
+    remote_ = Path(firecrest_config.workdir).joinpath("job.sh")
     transport.put(tmpdir / "job.sh", remote_)
 
     for _ in range(5):

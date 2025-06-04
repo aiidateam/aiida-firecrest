@@ -55,9 +55,7 @@ def test_calculation_file_transfer(
     entry_points.add(NoopParser, "aiida.parsers:testing.noop")
 
     # add a remote file which is used remote_copy_list
-    firecrest_computer.get_transport()._cwd.joinpath(
-        firecrest_computer.get_workdir(), "remote_copy.txt"
-    ).touch()
+    Path(firecrest_computer.get_workdir()).joinpath("remote_copy.txt").touch()
 
     # setup the calculation
     code = orm.InstalledCode(

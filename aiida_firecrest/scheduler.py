@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import itertools
+from pathlib import Path
 import re
 import string
 import time
@@ -194,7 +195,7 @@ class FirecrestScheduler(Scheduler):
             try:
                 result = transport._client.submit(
                     transport._machine,
-                    script_remote_path=transport._get_path(working_directory, filename),
+                    script_remote_path=str(Path(working_directory).joinpath(filename)),
                 )
             except FirecrestException as exc:
                 raise SchedulerError(str(exc)) from exc
