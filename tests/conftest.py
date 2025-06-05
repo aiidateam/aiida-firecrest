@@ -1,3 +1,11 @@
+###########################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                     #
+# This file is part of the AiiDA code.                                    #
+#                                                                         #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
+# For further information on the license, see the LICENSE.txt file        #
+# For further information please visit http://www.aiida.net               #
+###########################################################################
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -16,6 +24,8 @@ from aiida import orm
 import firecrest
 import pytest
 import requests
+
+import aiida_firecrest.transport as _trans
 
 
 class Slurm:
@@ -212,11 +222,12 @@ class MockFirecrest:
 
         return content_list
 
-    def stat(self, machine: str, targetpath: firecrest.path, dereference=True):
+    def stat(self, machine: str, targetpath: str, dereference=True):
         stats = os.stat(
             targetpath, follow_symlinks=bool(dereference) if dereference else False
         )
         return {
+            "mode": stats.st_mode,
             "ino": stats.st_ino,
             "dev": stats.st_dev,
             "nlink": stats.st_nlink,
@@ -533,10 +544,8 @@ def firecrest_config(
                 " when a config file is passed using --firecrest-config."
             )
 
-        monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
-        monkeypatch.setattr(
-            firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth
-        )
+        monkeypatch.setattr(_trans, "Firecrest", MockFirecrest)
+        monkeypatch.setattr(_trans, "ClientCredentialsAuth", MockClientCredentialsAuth)
 
         # dummy config
         _temp_directory = tmp_path / "temp"

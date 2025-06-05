@@ -1,26 +1,50 @@
+###########################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                     #
+# This file is part of the AiiDA code.                                    #
+#                                                                         #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
+# For further information on the license, see the LICENSE.txt file        #
+# For further information please visit http://www.aiida.net               #
+###########################################################################
 """Transport interface."""
 
 from __future__ import annotations
 
-from contextlib import suppress
+from collections.abc import Iterator
+from contextlib import contextmanager
 import fnmatch
 import hashlib
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import posixpath
+import stat
 import tarfile
 from typing import Any, Callable, ClassVar, TypedDict
 import uuid
 
 from aiida.cmdline.params.options.interactive import InteractiveOption
 from aiida.cmdline.params.options.overridable import OverridableOption
-from aiida.transports import Transport
+from aiida.transports.transport import BlockingTransport
 from aiida.transports.util import FileAttribute
 from click.core import Context
 from click.types import ParamType
-from firecrest import ClientCredentialsAuth, Firecrest  # type: ignore[attr-defined]
-from firecrest.path import FcPath
+from firecrest import ClientCredentialsAuth  # type: ignore[attr-defined]
+from firecrest.FirecrestException import HeaderException
+from firecrest.v1.BasicClient import Firecrest
 from packaging.version import Version, parse
+
+from aiida_firecrest.utils import (
+    _COMMON_HEADER_EXC,
+    FcPath,
+    TPath_Extended,
+    disable_fc_logging,
+)
+
+try:
+    # available in python 3.11
+    from typing import Self  # type: ignore
+except ImportError:
+    from typing_extensions import Self
 
 
 class ValidAuthOption(TypedDict, total=False):
@@ -89,9 +113,7 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
     )
 
     # Temp directory routine
-    if transport._cwd.joinpath(
-        transport._temp_directory
-    ).is_file():  # self._temp_directory.is_file():
+    if transport.isfile(transport._temp_directory):
         raise click.BadParameter("Temp directory cannot be a file")
 
     if transport.path_exists(transport._temp_directory):
@@ -259,7 +281,7 @@ def _dynamic_info_direct_size(
     return small_file_size_mb
 
 
-class FirecrestTransport(Transport):
+class FirecrestTransport(BlockingTransport):
     """Transport interface for FirecREST.
     It must be used together with the 'firecrest' scheduler plugin."""
 
@@ -416,8 +438,7 @@ class FirecrestTransport(Transport):
         except Exception as e:
             raise ValueError(f"Could not connect to FirecREST server: {e}") from e
 
-        self._cwd: FcPath = FcPath(self._client, self._machine, "/", cache_enabled=True)
-        self._temp_directory = self._cwd.joinpath(temp_directory)
+        self._temp_directory = FcPath(temp_directory)
 
         self._api_version: Version = parse(api_version)
 
@@ -461,36 +482,110 @@ class FirecrestTransport(Transport):
         """
         pass
 
-    def getcwd(self) -> str:
-        """Return the current working directory."""
-        return str(self._cwd)
+    @contextmanager
+    def convert_header_exceptions(
+        self, convert: None | dict[str, Callable[[Self], Exception] | None] = None
+    ) -> Iterator[None]:
+        """Catch HeaderException and re-raise as an alternative."""
+        converters: dict[str, Callable[[Self], Exception] | None] = {
+            **_COMMON_HEADER_EXC,
+            **(convert or {}),
+        }
+        with disable_fc_logging():
+            try:
+                yield
+            except HeaderException as exc:
+                for header in exc.responses[-1].headers:
+                    c = converters.get(header)
+                    if c is not None:
+                        raise c(self) from exc
+                raise
 
-    def _get_path(self, *path: str) -> str:
-        """Return the path as a string."""
-        return posixpath.normpath(self._cwd.joinpath(*path))  # type: ignore
+    def chmod(self, path: TPath_Extended, mode: int) -> None:
+        """Change the mode of a path to the numeric mode.
 
-    def chdir(self, path: str) -> None:
-        """Change the current working directory."""
-        new_path = self._cwd.joinpath(path)
-        if not new_path.is_dir():
-            raise OSError(f"'{new_path}' is not a valid directory")
-        self._cwd = new_path
+        Note, if the path points to a symlink,
+        the symlink target's permissions are changed.
+        """
 
-    def chmod(self, path: str, mode: str) -> None:
-        """Change the mode of a file."""
-        self._cwd.joinpath(path).chmod(mode)
+        path = str(path)
+        # note: according to https://www.gnu.org/software/coreutils/manual/html_node/chmod-invocation.html#chmod-invocation
+        # chmod never changes the permissions of symbolic links,
+        # i.e. this is chmod, not lchmod
+        if not isinstance(mode, int):
+            raise TypeError("mode must be an integer")
+        with self.convert_header_exceptions(
+            {"X-Invalid-Mode": lambda p: ValueError(f"invalid mode: {mode}")}
+        ):
+            self._client.chmod(self._machine, path, str(mode))
 
-    def chown(self, path: str, uid: str, gid: str) -> None:
-        """Change the owner of a file."""
-        self._cwd.joinpath(path).chown(uid, gid)
+    def chown(self, path: TPath_Extended, uid: int, gid: int) -> None:
+        raise NotImplementedError
 
-    def path_exists(self, path: str) -> bool:
+    def _stat(self, path: TPath_Extended) -> os.stat_result:
+        """Return stat info for this path.
+
+        If the path is a symbolic link,
+        stat will examine the file the link points to.
+        """
+
+        path = str(path)
+        with self.convert_header_exceptions():
+            stats = self._client.stat(self._machine, path, dereference=True)
+        return os.stat_result(
+            (
+                stats["mode"],
+                stats["ino"],
+                stats["dev"],
+                stats["nlink"],
+                stats["uid"],
+                stats["gid"],
+                stats["size"],
+                stats["atime"],
+                stats["mtime"],
+                stats["ctime"],
+            )
+        )
+
+    def _lstat(self, path: TPath_Extended) -> os.stat_result:
+        """
+        Like stat(), except if the path points to a symlink, the symlink's
+        status information is returned, rather than its target's.
+        """
+
+        path = str(path)
+        with self.convert_header_exceptions():
+            stats = self._client.stat(self._machine, path, dereference=False)
+        return os.stat_result(
+            (
+                stats["mode"],
+                stats["ino"],
+                stats["dev"],
+                stats["nlink"],
+                stats["uid"],
+                stats["gid"],
+                stats["size"],
+                stats["atime"],
+                stats["mtime"],
+                stats["ctime"],
+            )
+        )
+
+    def path_exists(self, path: TPath_Extended) -> bool:
         """Check if a path exists on the remote."""
-        return self._cwd.joinpath(path).exists()  # type: ignore
 
-    def get_attribute(self, path: str) -> FileAttribute:
+        path = str(path)
+        try:
+            self._stat(path)
+        except FileNotFoundError:
+            return False
+        return True
+
+    def get_attribute(self, path: TPath_Extended) -> FileAttribute:
         """Get the attributes of a file."""
-        result = self._cwd.joinpath(path).stat()
+
+        path = str(path)
+        result = self._stat(path)
         return FileAttribute(  # type: ignore
             {
                 "st_size": result.st_size,
@@ -502,22 +597,36 @@ class FirecrestTransport(Transport):
             }
         )
 
-    def isdir(self, path: str) -> bool:
+    def isdir(self, path: TPath_Extended) -> bool:
         """Check if a path is a directory."""
-        return self._cwd.joinpath(path).is_dir()  # type: ignore
 
-    def isfile(self, path: str) -> bool:
+        path = str(path)
+        try:
+            st_mode = self._stat(path).st_mode
+        except FileNotFoundError:
+            return False
+        return stat.S_ISDIR(st_mode)
+
+    def isfile(self, path: TPath_Extended) -> bool:
         """Check if a path is a file."""
-        return self._cwd.joinpath(path).is_file()  # type: ignore
 
-    def listdir(
-        self, path: str = ".", pattern: str | None = None, recursive: bool = False
+        path = str(path)
+        try:
+            st_mode = self._stat(path).st_mode
+        except FileNotFoundError:
+            return False
+        return stat.S_ISREG(st_mode)
+
+    def listdir(  # type: ignore[override]
+        self,
+        path: TPath_Extended,
+        pattern: str | None = None,
+        recursive: bool = False,
+        hidden: bool = True,
     ) -> list[str]:
-        """List the contents of a directory.
+        """List the contents of a directory. Returns filenames (or relative paths).
 
-        :param path: this could be relative or absolute path.
-            Note igolb() will usually call this with relative path.
-
+        :param path: this should be an absolute path.
         :param pattern: Unix shell-style wildcards to match the pattern:
             - `*` matches everything
             - `?` matches any single character
@@ -525,93 +634,124 @@ class FirecrestTransport(Transport):
             - `[!seq]` matches any character not in seq
         :param recursive: If True, list directories recursively
         """
-        path_abs = self._cwd.joinpath(path)
-        names = [p.relpath(path_abs) for p in path_abs.iterdir(recursive=recursive)]
+
+        path = str(path)
+        if not recursive and self.isdir(path) and not path.endswith("/"):
+            # This is just to match the behavior of ls
+            path += "/"
+
+        with self.convert_header_exceptions():
+            results = self._client.list_files(
+                self._machine, path, show_hidden=hidden, recursive=recursive
+            )
+        # names are relative to path
+        names = [result["name"] for result in results]
+
         if pattern is not None:
             names = fnmatch.filter(names, pattern)
         return names
 
     # TODO the default implementations of glob / iglob could be overridden
-    # to be more performant, using cached FcPaths and https://github.com/chrisjsewell/virtual-glob
 
-    def makedirs(self, path: str, ignore_existing: bool = False) -> None:
+    def makedirs(self, path: TPath_Extended, ignore_existing: bool = False) -> None:
         """Make directories on the remote."""
-        new_path = self._cwd.joinpath(path)
-        if not ignore_existing and new_path.exists():
+
+        path = str(path)
+        exists = self.path_exists(path)
+        if not ignore_existing and exists:
             # Note: FirecREST does not raise an error if the directory already exists, and parent is True.
             # which makes sense, but following the Superclass, we should raise an OSError in that case.
             # AiiDA expects an OSError, instead of a FileExistsError
             raise OSError(f"'{path}' already exists")
-        self._cwd.joinpath(path).mkdir(parents=True, exist_ok=ignore_existing)
 
-    def mkdir(self, path: str, ignore_existing: bool = False) -> None:
+        if ignore_existing and exists:
+            return
+
+        # firecrest does not support `exist_ok`, it's somehow blended into `parents`
+        # see: https://github.com/eth-cscs/firecrest/issues/202
+        self.mkdir(path, ignore_existing=True)
+
+    def mkdir(self, path: TPath_Extended, ignore_existing: bool = False) -> None:
         """Make a directory on the remote."""
-        try:
-            self._cwd.joinpath(path).mkdir(exist_ok=ignore_existing)
-        except FileExistsError as err:
-            raise OSError(f"'{path}' already exists") from err
 
-    def normalize(self, path: str = ".") -> str:
-        """Resolve the path."""
+        path = str(path)
+        try:
+            with self.convert_header_exceptions():
+                # Note see: https://github.com/eth-cscs/firecrest/issues/172
+                # Also see: https://github.com/eth-cscs/firecrest/issues/202
+                # firecrest does not support `exist_ok`, it's somehow blended into `parents`
+                self._client.mkdir(self._machine, path, p=ignore_existing)
+
+        except FileExistsError as err:
+            if not ignore_existing:
+                raise OSError(f"'{path}' already exists") from err
+
+    def normalize(self, path: TPath_Extended) -> str:  # type: ignore[override]
+        """Normalize a path on the remote."""
+
+        # TODO: this might be buggy
+        path = str(path)
         return posixpath.normpath(path)
 
-    def write_binary(self, path: str, data: bytes) -> None:
-        """Write bytes to a file on the remote."""
-        # Note this is not part of the Transport interface, but is useful for testing
-        # TODO will fail for files exceeding small_file_size_mb
-        self._cwd.joinpath(path).write_bytes(data)
-
-    def read_binary(self, path: str) -> bytes:
-        """Read bytes from a file on the remote."""
-        # Note this is not part of the Transport interface, but is useful for testing
-        # TODO will fail for files exceeding small_file_size_mb
-        return self._cwd.joinpath(path).read_bytes()  # type: ignore
-
-    def symlink(self, remotesource: str, remotedestination: str) -> None:
+    def symlink(
+        self, remotesource: TPath_Extended, remotedestination: TPath_Extended
+    ) -> None:
         """Create a symlink on the remote."""
-        source = self._cwd.joinpath(remotesource)
-        destination = self._cwd.joinpath(remotedestination)
-        destination.symlink_to(source)
+
+        remotedestination = str(remotedestination)
+
+        target_path = PurePosixPath(remotesource)
+        if not target_path.is_absolute():
+            raise ValueError("target(remotesource) must be an absolute path")
+        with self.convert_header_exceptions():
+            self._client.symlink(self._machine, str(target_path), remotedestination)
 
     def copyfile(
-        self, remotesource: str, remotedestination: str, dereference: bool = False
+        self,
+        remotesource: TPath_Extended,
+        remotedestination: TPath_Extended,
+        dereference: bool = False,
     ) -> None:
         """Copy a file on the remote. FirecREST does not support symlink copying.
 
         :param dereference: If True, copy the target of the symlink instead of the symlink itself.
         """
-        source = self._cwd.joinpath(
-            remotesource
-        )  # .enable_cache() it's removed from from path.py to be investigated
-        destination = self._cwd.joinpath(
-            remotedestination
-        )  # .enable_cache() it's removed from from path.py to be investigated
+
+        source = str(remotesource)
+        destination = str(remotedestination)
+
         if dereference:
             raise NotImplementedError("copyfile() does not support symlink dereference")
-        if not source.exists():
+        if not self.path_exists(source):
             raise FileNotFoundError(f"Source file does not exist: {source}")
-        if not source.is_file():
+        if not self.isfile(source):
             raise ValueError(f"Source is not a file: {source}")
-        if not destination.exists() and not source.is_file():
+        if not self.path_exists(destination) and not self.isfile(source):
             raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
         self._copy_to(source, destination)
         # I removed symlink copy, becasue it's really not a file copy, it's a link copy
         # and aiida-ssh have it in buggy manner, prrobably it's not used anyways
 
-    def _copy_to(self, source: FcPath, target: FcPath) -> None:
+    def _copy_to(self, source: TPath_Extended, target: TPath_Extended) -> None:
         """Copy source path to the target path. Both paths must be on remote.
 
         Works for both files and directories (in which case the whole tree is copied).
         """
-        with self._cwd.convert_header_exceptions():
+
+        source = str(source)
+        target = str(target)
+        with self.convert_header_exceptions():
             # Note although this endpoint states that it is only for directories,
             # it actually uses `cp -r`:
             # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L320
-            self._client.copy(self._machine, str(source), str(target))
+            self._client.copy(self._machine, source, target)
 
     def copytree(
-        self, remotesource: str, remotedestination: str, dereference: bool = False
+        self,
+        remotesource: TPath_Extended,
+        remotedestination: TPath_Extended,
+        dereference: bool = False,
     ) -> None:
         """Copy a directory on the remote. FirecREST does not support symlink copying.
 
@@ -619,29 +759,25 @@ class FirecrestTransport(Transport):
         """
         # TODO: check if deference is set to False, symlinks will be functional after the copy in Firecrest server.
 
-        source = self._cwd.joinpath(
-            remotesource
-        )  # .enable_cache().enable_cache() it's removed from from path.py to be investigated
-        destination = self._cwd.joinpath(
-            remotedestination
-        )  # .enable_cache().enable_cache() it's removed from from path.py to be investigated
+        source = remotesource
+        destination = remotedestination
         if dereference:
             raise NotImplementedError(
                 "Dereferencing not implemented in FirecREST server"
             )
-        if not source.exists():
+        if not self.path_exists(source):
             raise FileNotFoundError(f"Source file does not exist: {source}")
-        if not source.is_dir():
+        if not self.isdir(source):
             raise ValueError(f"Source is not a directory: {source}")
-        if not destination.exists():
+        if not self.path_exists(destination):
             raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
         self._copy_to(source, destination)
 
     def copy(
         self,
-        remotesource: str,
-        remotedestination: str,
+        remotesource: TPath_Extended,
+        remotedestination: TPath_Extended,
         dereference: bool = False,
         recursive: bool = True,
     ) -> None:
@@ -655,6 +791,9 @@ class FirecrestTransport(Transport):
         """
         # TODO: investigate overwrite (?)
 
+        remotesource = str(remotesource)
+        remotedestination = str(remotedestination)
+
         if not recursive:
             # TODO this appears to not actually be used upstream, so just remove there
             raise NotImplementedError("Non-recursive copy not implemented")
@@ -663,7 +802,7 @@ class FirecrestTransport(Transport):
                 "Dereferencing not implemented in FirecREST server"
             )
 
-        if self.has_magic(str(remotesource)):  # type: ignore
+        if self.has_magic(remotesource):
             for item in self.iglob(remotesource):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
@@ -675,27 +814,20 @@ class FirecrestTransport(Transport):
                 )
             return
 
-        source = self._cwd.joinpath(
-            remotesource
-        )  # .enable_cache() it's removed from from path.py to be investigated
-        destination = self._cwd.joinpath(
-            remotedestination
-        )  # .enable_cache() it's removed from from path.py to be investigated
+        if not self.path_exists(remotesource):
+            raise FileNotFoundError(f"Source does not exist: {remotesource}")
+        if not self.path_exists(remotedestination) and not self.isfile(remotesource):
+            raise FileNotFoundError(f"Destination does not exist: {remotedestination}")
 
-        if not source.exists():
-            raise FileNotFoundError(f"Source does not exist: {source}")
-        if not destination.exists() and not source.is_file():
-            raise FileNotFoundError(f"Destination does not exist: {destination}")
-
-        self._copy_to(source, destination)
+        self._copy_to(remotesource, remotedestination)
 
     # TODO do get/put methods need to handle glob patterns?
     # Apparently not, but I'm not clear how glob() iglob() are going to behave here. We may need to implement them.
 
     def getfile(
         self,
-        remotepath: str | FcPath,
-        localpath: str | Path,
+        remotepath: TPath_Extended,
+        localpath: TPath_Extended,
         dereference: bool = True,
         *args: Any,
         **kwargs: Any,
@@ -706,29 +838,25 @@ class FirecrestTransport(Transport):
             note: we don't support downloading symlinks, so dereference should always be True
 
         """
+        remotepath = FcPath(remotepath)
+        local = Path(localpath)
+
         if not dereference:
             raise NotImplementedError(
                 "Getting symlinks with `dereference=False` is not supported"
             )
 
-        local = Path(localpath)
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
-        remote = (
-            remotepath
-            if isinstance(remotepath, FcPath)
-            else self._cwd.joinpath(
-                remotepath
-            )  # .enable_cache() it's removed from from path.py to be investigated
-        )
-        if not remote.is_file():
-            raise FileNotFoundError(f"Source file does not exist: {remote}")
-        remote_size = remote.lstat().st_size
+
+        if not self.isfile(remotepath):
+            raise FileNotFoundError(f"Source file does not exist: {remotepath}")
+        remote_size = self._lstat(remotepath).st_size
         # if not local.exists():
         #     local.mkdir(parents=True)
-        with self._cwd.convert_header_exceptions():
+        with self.convert_header_exceptions():
             if remote_size < self._small_file_size_bytes:
-                self._client.simple_download(self._machine, str(remote), localpath)
+                self._client.simple_download(self._machine, str(remotepath), local)
             else:
                 # TODO the following is a very basic implementation of downloading a large file
                 # ideally though, if downloading multiple large files (i.e. in gettree),
@@ -739,14 +867,16 @@ class FirecrestTransport(Transport):
                 # I investigated asyncio, but it's not performant for this use case.
                 # Becasue in the end, FirecREST server ends up serializing the requests.
                 # see here: https://github.com/eth-cscs/pyfirecrest/issues/94
-                down_obj = self._client.external_download(self._machine, str(remote))
+                down_obj = self._client.external_download(
+                    self._machine, str(remotepath)
+                )
                 down_obj.finish_download(local)
 
         if self.checksum_check:
-            self._validate_checksum(local, remote)
+            self._validate_checksum(local, remotepath)
 
     def _validate_checksum(
-        self, localpath: str | Path, remotepath: str | FcPath
+        self, localpath: TPath_Extended, remotepath: TPath_Extended
     ) -> None:
         """Validate the checksum of a file.
         Useful for checking if a file was transferred correctly.
@@ -756,18 +886,13 @@ class FirecrestTransport(Transport):
         """
 
         local = Path(localpath)
+        remotepath = str(remotepath)
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
-        remote = (
-            remotepath
-            if isinstance(remotepath, FcPath)
-            else self._cwd.joinpath(
-                remotepath
-            )  # .enable_cache() it's removed from from path.py to be investigated
-        )
-        if not remote.is_file():
+
+        if not self.isfile(remotepath):
             raise FileNotFoundError(
-                f"Cannot calculate checksum for a directory: {remote}"
+                f"Cannot calculate checksum for a directory: {remotepath}"
             )
 
         sha256_hash = hashlib.sha256()
@@ -776,19 +901,19 @@ class FirecrestTransport(Transport):
                 sha256_hash.update(byte_block)
         local_hash = sha256_hash.hexdigest()
 
-        remote_hash = self._client.checksum(self._machine, remote)
+        remote_hash = self._client.checksum(self._machine, remotepath)
 
         try:
             assert local_hash == remote_hash
         except AssertionError as e:
             raise ValueError(
-                f"Checksum mismatch between local and remote files: {local} and {remote}"
+                f"Checksum mismatch between local and remote files: {local} and {remotepath}"
             ) from e
 
     def _gettreetar(
         self,
-        remotepath: str | FcPath,
-        localpath: str | Path,
+        remotepath: TPath_Extended,
+        localpath: TPath_Extended,
         dereference: bool = True,
         *args: Any,
         **kwargs: Any,
@@ -801,12 +926,15 @@ class FirecrestTransport(Transport):
         :param dereference: If True, follow symlinks.
         """
 
+        remotepath = str(remotepath)
+        localpath = str(localpath)
+
         _ = uuid.uuid4()
         remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
 
         # Compress
         self._client.compress(
-            self._machine, str(remotepath), remote_path_temp, dereference=dereference
+            self._machine, remotepath, remote_path_temp, dereference=dereference
         )
 
         # Download
@@ -829,8 +957,8 @@ class FirecrestTransport(Transport):
 
     def gettree(
         self,
-        remotepath: str | FcPath,
-        localpath: str | Path,
+        remotepath: TPath_Extended,
+        localpath: TPath_Extended,
         dereference: bool = True,
         *args: Any,
         **kwargs: Any,
@@ -841,61 +969,95 @@ class FirecrestTransport(Transport):
             note: dereference should be always True, otherwise the symlinks will not be functional.
         """
 
+        remotepath = FcPath(remotepath)
         local = Path(localpath)
+
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
         if local.is_file():
             raise OSError("Cannot copy a directory into a file")
 
-        remote = (
-            remotepath
-            if isinstance(remotepath, FcPath)
-            else self._cwd.joinpath(
-                remotepath
-            )  # .enable_cache() it's removed from from path.py to be investigated
-        )
-        local = Path(localpath)
-
-        if not remote.is_dir():
-            raise OSError(f"Source is not a directory: {remote}")
+        if not self.isdir(remotepath):
+            raise OSError(f"Source is not a directory: {remotepath}")
 
         # this block is added only to mimick the behavior that aiida expects
         if local.exists():
             # Destination directory already exists, create remote directory name inside it
-            local = local.joinpath(remote.name)
+            local = local.joinpath(remotepath.name)
             local.mkdir(parents=True, exist_ok=True)
         else:
             # Destination directory does not exist, create and move content abc inside it
             local.mkdir(parents=True, exist_ok=False)
 
-        if self.payoff(remote):
+        if self.payoff(remotepath):
             # in this case send a request to the server to tar the files and then download the tar file
             # unfortunately, the server does not provide a deferenced tar option, yet.
-            self._gettreetar(remote, local, dereference=dereference)
+            self._gettreetar(remotepath, local, dereference=dereference)
         else:
             # otherwise download the files one by one
-            for remote_item in remote.iterdir(recursive=True):
-                local_item = local.joinpath(remote_item.relpath(remote))
-                if dereference and remote_item.is_symlink():
-                    target_path = remote_item._cache.link_target
+            for remote_item in self.listdir(remotepath, recursive=True):
+                # remote_item is a relative path,
+                remote_item_abs = remotepath.joinpath(remote_item).resolve()
+                local_item = local.joinpath(remote_item)
+                if dereference and self.is_symlink(remote_item_abs):
+                    target_path = self._get_target(remote_item_abs)
                     if not Path(target_path).is_absolute():
-                        target_path = remote_item.parent.joinpath(target_path).resolve()
+                        target_path = remote_item_abs.parent.joinpath(
+                            target_path
+                        ).resolve()
 
-                    target_path = self._cwd.joinpath(target_path)
-                    if target_path.is_dir():
+                    if self.isdir(target_path):
                         self.gettree(target_path, local_item, dereference=True)
                 else:
-                    target_path = remote_item
+                    target_path = remote_item_abs
 
-                if not target_path.is_dir():
+                if not self.isdir(target_path):
                     self.getfile(target_path, local_item)
                 else:
                     local_item.mkdir(parents=True, exist_ok=True)
 
+    def _get_target(self, path: TPath_Extended) -> FcPath:
+        """gets the target of a symlink.
+        Note: path must be a symlink, we don't check that, here."""
+
+        path = str(path)
+        # results = self._client.list_files(self._machine, path,
+        #                                   show_hidden=True,
+        #                                   recursive=False,
+        #                                   dereference=False)
+        # dereference=False is not supported in firecrest v1,
+        # so we have to do a workaround
+        results = self._client.list_files(
+            self._machine, str(Path(path).parent), show_hidden=True, recursive=False
+        )
+        # filter results to get the symlink with the given path
+        results = [result for result in results if result["name"] == Path(path).name]
+
+        if not results:
+            raise FileNotFoundError(f"Symlink target does not exist: {path}")
+        if len(results) != 1:
+            raise ValueError(
+                f"Expected a single symlink target, got {len(results)}: {path}"
+            )
+
+        # in v2 this might have change
+        # return results[0]["linkTarget"]
+        return FcPath(results[0]["link_target"])
+
+    def is_symlink(self, path: TPath_Extended) -> bool:
+        """Whether path is a symbolic link."""
+
+        path = str(path)
+        try:
+            st_mode = self._lstat(path).st_mode
+        except FileNotFoundError:
+            return False
+        return stat.S_ISLNK(st_mode)
+
     def get(
         self,
-        remotepath: str,
-        localpath: str,
+        remotepath: TPath_Extended,
+        localpath: TPath_Extended,
         ignore_nonexisting: bool = False,
         dereference: bool = True,
         *args: Any,
@@ -907,16 +1069,16 @@ class FirecrestTransport(Transport):
         :param dereference: If True, follow symlinks.
             note: dereference should be always True, otherwise the symlinks will not be functional.
         """
-        remote = self._cwd.joinpath(
-            remotepath
-        )  # .enable_cache() it's removed from from path.py to be investigated
 
-        if remote.is_dir():
-            self.gettree(remote, localpath)
-        elif remote.is_file():
-            self.getfile(remote, localpath)
-        elif self.has_magic(str(remotepath)):  # type: ignore
-            for item in self.iglob(remotepath):  # type: ignore
+        remotepath = FcPath(remotepath)
+        localpath = str(localpath)
+
+        if self.isdir(remotepath):
+            self.gettree(remotepath, localpath)
+        elif self.isfile(remotepath):
+            self.getfile(remotepath, localpath)
+        elif self.has_magic(remotepath):  # type: ignore
+            for item in self.iglob(str(remotepath)):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
                 self.get(
@@ -927,12 +1089,12 @@ class FirecrestTransport(Transport):
                 )
             return
         elif not ignore_nonexisting:
-            raise FileNotFoundError(f"Source file does not exist: {remote}")
+            raise FileNotFoundError(f"Source file does not exist: {remotepath}")
 
     def putfile(
         self,
-        localpath: str | Path,
-        remotepath: str | FcPath,
+        localpath: TPath_Extended,
+        remotepath: TPath_Extended,
         dereference: bool = True,
         *args: Any,
         **kwargs: Any,
@@ -944,31 +1106,33 @@ class FirecrestTransport(Transport):
 
         """
 
+        localpath = Path(localpath)
+        remotepath = FcPath(remotepath)
+
         if not dereference:
             raise NotImplementedError(
                 "Getting symlinks with `dereference=False` is not supported"
             )
 
-        localpath = Path(localpath)
         if not localpath.is_absolute():
             raise ValueError("The localpath must be an absolute path")
         if not localpath.is_file():
             if not localpath.exists():
                 raise FileNotFoundError(f"Local file does not exist: {localpath}")
             raise ValueError(f"Input localpath is not a file {localpath}")
-        remote = self._cwd.joinpath(
-            str(remotepath)
-        )  # .enable_cache() it's removed from from path.py to be investigated
 
-        if remote.is_dir():
-            raise ValueError(f"Destination is a directory: {remote}")
+        if self.isdir(remotepath):
+            raise ValueError(f"Destination is a directory: {remotepath}")
 
         local_size = localpath.stat().st_size
         # note this allows overwriting of existing files
-        with self._cwd.convert_header_exceptions():
+        with self.convert_header_exceptions():
             if local_size < self._small_file_size_bytes:
                 self._client.simple_upload(
-                    self._machine, str(localpath), str(remote.parent), remote.name
+                    self._machine,
+                    str(localpath),
+                    str(remotepath.parent),
+                    str(remotepath.name),
                 )
             else:
                 # TODO the following is a very basic implementation of uploading a large file
@@ -981,14 +1145,14 @@ class FirecrestTransport(Transport):
                 # Becasue in the end, FirecREST server ends up serializing the requests.
                 # see here: https://github.com/eth-cscs/pyfirecrest/issues/94
                 up_obj = self._client.external_upload(
-                    self._machine, str(localpath), str(remote)
+                    self._machine, str(localpath), str(remotepath)
                 )
                 up_obj.finish_upload()
 
         if self.checksum_check:
-            self._validate_checksum(localpath, str(remote))
+            self._validate_checksum(localpath, str(remotepath))
 
-    def payoff(self, path: str | FcPath | Path) -> bool:
+    def payoff(self, path: TPath_Extended) -> bool:
         """
         This function will be used to determine whether to tar the files before downloading
         """
@@ -997,19 +1161,22 @@ class FirecrestTransport(Transport):
         # It responses in 1, 1.5, 3, 5, 7 seconds!
         # So right now, I think if the number of files is more than 3, it pays off to tar everything
 
+        path = str(path)
+
         # If payoff_override is set, return its value
         if self.payoff_override is not None:
             return bool(self.payoff_override)
 
-        return (
-            isinstance(path, FcPath)
-            and len(self.listdir(str(path), recursive=True)) > 3
-        ) or (isinstance(path, Path) and len(os.listdir(path)) > 3)
+        # This is a workaround to determine if the path is local or remote
+        if Path(path).exists():
+            return len(os.listdir(path)) > 3
+
+        return len(self.listdir(path, recursive=True)) > 3
 
     def _puttreetar(
         self,
-        localpath: str | Path,
-        remotepath: str | FcPath,
+        localpath: TPath_Extended,
+        remotepath: TPath_Extended,
         dereference: bool = True,
         *args: Any,
         **kwargs: Any,
@@ -1026,6 +1193,8 @@ class FirecrestTransport(Transport):
         _ = uuid.uuid4()
 
         localpath = Path(localpath)
+        remotepath = str(remotepath)
+
         tarpath = localpath.parent.joinpath(f"temp_{_}.tar")
         remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
         with tarfile.open(tarpath, "w", dereference=dereference) as tar:
@@ -1043,14 +1212,14 @@ class FirecrestTransport(Transport):
 
         # Attempt extract
         try:
-            self._client.extract(self._machine, remote_path_temp, str(remotepath))
+            self._client.extract(self._machine, remote_path_temp, remotepath)
         finally:
             self.remove(remote_path_temp)
 
     def puttree(
         self,
-        localpath: str | Path,
-        remotepath: str,
+        localpath: TPath_Extended,
+        remotepath: TPath_Extended,
         dereference: bool = True,
         *args: Any,
         **kwargs: Any,
@@ -1065,7 +1234,7 @@ class FirecrestTransport(Transport):
             raise NotImplementedError
 
         localpath = Path(localpath)
-        remote = self._cwd.joinpath(remotepath)
+        remote = FcPath(remotepath)
 
         if not localpath.is_absolute():
             raise ValueError("The localpath must be an absolute path")
@@ -1075,9 +1244,9 @@ class FirecrestTransport(Transport):
             raise ValueError(f"Input localpath is not a directory: {localpath}")
 
         # this block is added only to mimick the behavior that aiida expects
-        if remote.exists():
+        if self.path_exists(remote):
             # Destination directory already exists, create local directory name inside it
-            remote = self._cwd.joinpath(remote, localpath.name)
+            remote = remote.joinpath(localpath.name)
             self.mkdir(remote, ignore_existing=False)
         else:
             # Destination directory does not exist, create and move content abc inside it
@@ -1101,8 +1270,8 @@ class FirecrestTransport(Transport):
 
     def put(
         self,
-        localpath: str,
-        remotepath: str,
+        localpath: TPath_Extended,
+        remotepath: TPath_Extended,
         ignore_nonexisting: bool = False,
         dereference: bool = True,
         *args: Any,
@@ -1122,11 +1291,12 @@ class FirecrestTransport(Transport):
             raise NotImplementedError
 
         local = Path(localpath)
+        remotepath = str(remotepath)
         if not local.is_absolute():
             raise ValueError("The localpath must be an absolute path")
 
-        if self.has_magic(str(localpath)):  # type: ignore
-            for item in self.iglob(localpath):  # type: ignore
+        if self.has_magic(str(localpath)):
+            for item in self.iglob(str(localpath)):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
                 self.put(
@@ -1145,53 +1315,81 @@ class FirecrestTransport(Transport):
         elif local.is_file():
             self.putfile(localpath, remotepath)
 
-    def remove(self, path: str | FcPath) -> None:
+    def remove(self, path: TPath_Extended) -> None:
         """Remove a file or directory on the remote."""
-        self._cwd.joinpath(str(path)).unlink()
+        # note firecrest uses `rm -f`,
 
-    def rename(self, oldpath: str, newpath: str) -> None:
+        path = str(path)
+
+        if self.isfile(path):
+            with self.convert_header_exceptions():
+                self._client.simple_delete(self._machine, path)
+        elif not self.path_exists(path):
+            # if the path does not exist, we do not raise an error
+            return
+        else:
+            raise OSError(f"Path is not a file: {path}")
+
+    def rename(self, oldpath: TPath_Extended, newpath: TPath_Extended) -> None:
         """Rename a file or directory on the remote."""
-        self._cwd.joinpath(oldpath).rename(self._cwd.joinpath(newpath))
 
-    def rmdir(self, path: str) -> None:
+        oldpath = str(oldpath)
+        newpath = str(newpath)
+
+        with self.convert_header_exceptions():
+            self._client.mv(self._machine, oldpath, newpath)
+
+    def rmdir(self, path: TPath_Extended) -> None:
         """Remove a directory on the remote.
         If the directory is not empty, an OSError is raised."""
 
+        path = str(path)
+
         if len(self.listdir(path)) == 0:
-            self._cwd.joinpath(path).rmtree()
+            with self.convert_header_exceptions():
+                self._client.simple_delete(self._machine, path)
         else:
             raise OSError(f"Directory not empty: {path}")
 
-    def rmtree(self, path: str) -> None:
+    def rmtree(self, path: TPath_Extended) -> None:
         """Remove a directory on the remote.
         If the directory is not empty, it will be removed recursively, equivalent to `rm -rf`.
         It does not raise an error if the directory does not exist.
         """
-        # TODO: suppress is to mimick the behaviour of `aiida-ssh`` transport, TODO: raise an issue on aiida
-        with suppress(FileNotFoundError):
-            self._cwd.joinpath(path).rmtree()
+        # note firecrest uses `rm -rf`,
+
+        path = str(path)
+
+        if self.isdir(path):
+            with self.convert_header_exceptions():
+                self._client.simple_delete(self._machine, path)
+        elif not self.path_exists(path):
+            # if the path does not exist, we do not raise an error
+            return
+        else:
+            raise OSError(f"Path is not a directory: {path}")
 
     def whoami(self) -> str | None:
         """Return the username of the current user.
         return None if the username cannot be determined.
         """
-        return self._client.whoami(machine=self._machine)  # type: ignore [no-any-return]
+        return self._client.whoami(machine=self._machine)
 
-    def gotocomputer_command(self, remotedir: str) -> str:
+    def gotocomputer_command(self, remotedir: TPath_Extended) -> str:
         """Not possible for REST-API.
         It's here only because it's an abstract method in the base class."""
         # TODO remove from interface
         raise NotImplementedError("firecrest does not support gotocomputer_command")
 
-    def _exec_command_internal(self, command: str, **kwargs: Any) -> Any:
+    def _exec_command_internal(self, command: str, **kwargs: Any) -> Any:  # type: ignore[override]
         """Not possible for REST-API.
         It's here only because it's an abstract method in the base class."""
         # TODO remove from interface
         raise NotImplementedError("firecrest does not support command execution")
 
-    def exec_command_wait_bytes(
-        self, command: str, stdin: Any = None, **kwargs: Any
-    ) -> Any:
+    def exec_command_wait_bytes(  # type: ignore[no-untyped-def]
+        self, command: str, stdin=None, workdir: TPath_Extended | None = None, **kwargs
+    ):
         """Not possible for REST-API.
         It's here only because it's an abstract method in the base class."""
         # TODO remove from interface

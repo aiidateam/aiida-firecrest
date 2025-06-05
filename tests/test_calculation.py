@@ -1,3 +1,11 @@
+###########################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                     #
+# This file is part of the AiiDA code.                                    #
+#                                                                         #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
+# For further information on the license, see the LICENSE.txt file        #
+# For further information please visit http://www.aiida.net               #
+###########################################################################
 """Test for running calculations on a FireCREST computer."""
 
 from pathlib import Path
@@ -55,9 +63,7 @@ def test_calculation_file_transfer(
     entry_points.add(NoopParser, "aiida.parsers:testing.noop")
 
     # add a remote file which is used remote_copy_list
-    firecrest_computer.get_transport()._cwd.joinpath(
-        firecrest_computer.get_workdir(), "remote_copy.txt"
-    ).touch()
+    Path(firecrest_computer.get_workdir()).joinpath("remote_copy.txt").touch()
 
     # setup the calculation
     code = orm.InstalledCode(

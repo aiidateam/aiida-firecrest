@@ -5,7 +5,7 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "aiida_firecrest"
 dynamic = ["version", "description"]
-authors = [{name = "Chris Sewell", email = "chrisj_sewell@hotmail.com"}]
+authors = [{name = "AiiDA team"}]
 readme = "README.md"
 license = {file = "LICENSE"}
 classifiers = [
@@ -24,9 +24,9 @@ classifiers = [
 keywords = ["aiida", "firecrest"]
 requires-python = ">=3.9"
 dependencies = [
-    "aiida-core@git+https://github.com/aiidateam/aiida-core.git@954cbdd",
+    "aiida-core>=2.7.0pre1",
     "click",
-    "pyfirecrest@git+https://github.com/eth-cscs/pyfirecrest.git@6cae414",
+    "pyfirecrest>=3.1.0",
     "pyyaml",
 ]
 
