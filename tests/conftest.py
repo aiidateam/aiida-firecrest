@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 
 from aiida import orm
 from firecrest import ClientCredentialsAuth, FirecrestException
-from firecrest.v1.BasicClient import Firecrest
+from firecrest.v2 import Firecrest
 import pytest
 import requests
 
@@ -437,6 +437,7 @@ class ComputerFirecrestConfig:
     temp_directory: str
     workdir: str
     api_version: str
+    billing_account: str
     small_file_size_mb: float = 1.0
     builder_metadata_options_custom_scheduler_commands: list[str] = field(
         default_factory=list
@@ -502,8 +503,10 @@ def firecrest_config(
         import uuid
 
         _uuid = uuid.uuid4()
-        config.workdir = config.workdir + f"/pytest_tmp_{_uuid}"
-        config.temp_directory = config.temp_directory + f"/pytest_tmp_{_uuid}"
+        config.workdir = str(Path(config.workdir) / f"pytest_tmp_{_uuid}")
+        config.temp_directory = str(
+            Path(config.temp_directory) / f"/pytest_tmp_{_uuid}"
+        )
 
         # # we need to connect to the client here,
         # # to ensure that the scratch path exists and is empty
@@ -515,8 +518,10 @@ def firecrest_config(
                 config.token_uri,
             ),
         )
-        client.mkdir(config.compute_resource, config.workdir, p=True)
-        client.mkdir(config.compute_resource, config.temp_directory, p=True)
+        client.mkdir(config.compute_resource, config.workdir, create_parents=True)
+        client.mkdir(
+            config.compute_resource, config.temp_directory, create_parents=True
+        )
 
         # if record_requests:
         #     telemetry = RequestTelemetry()
@@ -573,6 +578,7 @@ def firecrest_config(
             small_file_size_mb=1.0,
             temp_directory=str(_temp_directory),
             api_version="2",
+            billing_account="billing_account",
             builder_metadata_options_custom_scheduler_commands=[],
             mocked=True,
         )

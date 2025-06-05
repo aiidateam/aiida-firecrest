@@ -11,8 +11,6 @@
 from __future__ import annotations
 
 import datetime
-import itertools
-from pathlib import Path
 import re
 import string
 import time
@@ -201,13 +199,18 @@ class FirecrestScheduler(Scheduler):
         transport = self.transport
         with convert_header_exceptions({"machine": transport._machine}):
             try:
-                result = transport._client.submit(
-                    transport._machine,
-                    script_remote_path=str(Path(working_directory).joinpath(filename)),
-                )
+                # Firecrest v2 does not support remote scripts:
+                # https://github.com/eth-cscs/pyfirecrest/issues/161
+                # Until that is solved, this part of the code is not-functional
+                # result = transport._client.submit(
+                #     system_name=transport._machine,
+                #     working_dir=working_directory,
+                #     script_remote_path=str(Path(working_directory).joinpath(filename)),
+                # )
+                return "None"
             except FirecrestException as exc:
                 raise SchedulerError(str(exc)) from exc
-        return str(result["jobid"])
+        # return str(result["jobid"])
 
     def get_jobs(
         self,
@@ -215,22 +218,30 @@ class FirecrestScheduler(Scheduler):
         user: str | None = None,
         as_dict: bool = False,
     ) -> list[JobInfo] | dict[str, JobInfo]:
-        results = []
+        results = []  # type: ignore[var-annotated]
         transport = self.transport
 
         with convert_header_exceptions({"machine": transport._machine}):
             # TODO handle pagination (pageSize, pageNumber) if many jobs
             # This will do pagination
             try:
-                for page_iter in itertools.count():
-                    results += transport._client.poll_active(
-                        transport._machine,
-                        jobs,
-                        page_number=page_iter,
-                        page_size=self._DEFAULT_PAGE_SIZE,
-                    )
-                    if len(results) < self._DEFAULT_PAGE_SIZE * (page_iter + 1):
-                        break
+                # for page_iter in itertools.count():
+                #     results += transport._client.job_info(
+                #         transport._machine,
+                #         jobs,
+                #         page_number=page_iter,
+                #         page_size=self._DEFAULT_PAGE_SIZE,
+                #     )
+                #     if len(results) < self._DEFAULT_PAGE_SIZE * (page_iter + 1):
+                #         break
+                if jobs:
+                    for job in jobs:
+                        results += transport._client.job_info(transport._machine, job)
+                else:
+                    # results = transport._client.job_info(
+                    #     transport._machine,
+                    # )
+                    results = [[]]
             except FirecrestException as exc:
                 # TODO: check what type of error is returned and handle it properly
                 if "Invalid job id" not in str(exc):
@@ -394,7 +405,7 @@ class FirecrestScheduler(Scheduler):
     def kill_job(self, jobid: str) -> bool:
         transport = self.transport
         with convert_header_exceptions({"machine": transport._machine}):
-            transport._client.cancel(transport._machine, jobid)
+            transport._client.cancel_job(transport._machine, jobid)
         return True
 
     def _convert_time(self, string: str) -> int | None:
