@@ -1,3 +1,11 @@
+###########################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                     #
+# This file is part of the AiiDA code.                                    #
+#                                                                         #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
+# For further information on the license, see the LICENSE.txt file        #
+# For further information please visit http://www.aiida.net               #
+###########################################################################
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -13,9 +21,12 @@ from unittest.mock import MagicMock
 from urllib.parse import urlparse
 
 from aiida import orm
-import firecrest
+from firecrest import ClientCredentialsAuth, FirecrestException
+from firecrest.v1.BasicClient import Firecrest
 import pytest
 import requests
+
+import aiida_firecrest.transport as _trans
 
 
 class Slurm:
@@ -81,7 +92,7 @@ class MockFirecrest:
             mock_response = MagicMock()
             mock_response.status_code = 999  # I don't really know
             mock_response.json.return_value = {"error": "Mock error message"}
-            raise firecrest.FirecrestException(mock_response)
+            raise FirecrestException(mock_response)
 
         job_id = next(self.job_id_generator)
 
@@ -138,7 +149,7 @@ class MockFirecrest:
                 mock_response = MagicMock()
                 mock_response.status_code = 999  # I don't really know
                 mock_response.json.return_value = {"error": "Invalid job id"}
-                raise firecrest.FirecrestException([mock_response])
+                raise FirecrestException([mock_response])
             response.append(
                 {
                     "job_data_err": "",
@@ -212,11 +223,12 @@ class MockFirecrest:
 
         return content_list
 
-    def stat(self, machine: str, targetpath: firecrest.path, dereference=True):
+    def stat(self, machine: str, targetpath: str, dereference=True):
         stats = os.stat(
             targetpath, follow_symlinks=bool(dereference) if dereference else False
         )
         return {
+            "mode": stats.st_mode,
             "ino": stats.st_ino,
             "dev": stats.st_dev,
             "nlink": stats.st_nlink,
@@ -429,6 +441,7 @@ class ComputerFirecrestConfig:
     builder_metadata_options_custom_scheduler_commands: list[str] = field(
         default_factory=list
     )
+    mocked: bool = False
 
 
 class RequestTelemetry:
@@ -486,14 +499,17 @@ def firecrest_config(
         config = ComputerFirecrestConfig(**config)
         # # rather than use the scratch_path directly, we use a subfolder,
         # # which we can then clean
-        config.workdir = config.workdir + "/pytest_tmp"
-        config.temp_directory = config.temp_directory + "/pytest_tmp"
+        import uuid
+
+        _uuid = uuid.uuid4()
+        config.workdir = config.workdir + f"/pytest_tmp_{_uuid}"
+        config.temp_directory = config.temp_directory + f"/pytest_tmp_{_uuid}"
 
         # # we need to connect to the client here,
         # # to ensure that the scratch path exists and is empty
-        client = firecrest.Firecrest(
+        client = Firecrest(
             firecrest_url=config.url,
-            authorization=firecrest.ClientCredentialsAuth(
+            authorization=ClientCredentialsAuth(
                 config.client_id,
                 config.client_secret,
                 config.token_uri,
@@ -533,10 +549,8 @@ def firecrest_config(
                 " when a config file is passed using --firecrest-config."
             )
 
-        monkeypatch.setattr(firecrest, "Firecrest", MockFirecrest)
-        monkeypatch.setattr(
-            firecrest, "ClientCredentialsAuth", MockClientCredentialsAuth
-        )
+        monkeypatch.setattr(_trans, "Firecrest", MockFirecrest)
+        monkeypatch.setattr(_trans, "ClientCredentialsAuth", MockClientCredentialsAuth)
 
         # dummy config
         _temp_directory = tmp_path / "temp"
@@ -560,4 +574,5 @@ def firecrest_config(
             temp_directory=str(_temp_directory),
             api_version="2",
             builder_metadata_options_custom_scheduler_commands=[],
+            mocked=True,
         )

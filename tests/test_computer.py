@@ -1,3 +1,11 @@
+###########################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                     #
+# This file is part of the AiiDA code.                                    #
+#                                                                         #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
+# For further information on the license, see the LICENSE.txt file        #
+# For further information please visit http://www.aiida.net               #
+###########################################################################
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -87,7 +95,7 @@ def test_validate_temp_directory(
         ctx, None, Path(_remote / "nonexisting").as_posix()
     )
     assert result == Path(_remote / "nonexisting").as_posix()
-    assert transport._cwd.joinpath(_remote / "nonexisting").exists()
+    assert transport.path_exists(Path(_remote / "nonexisting"))
 
     # should get a confirmation if the directory exists and is not empty
     monkeypatch.setattr("click.confirm", lambda x: False)
@@ -102,9 +110,7 @@ def test_validate_temp_directory(
         ctx, None, Path(_remote / "temp_on_server_directory").as_posix()
     )
     assert result == Path(_remote / "temp_on_server_directory").as_posix()
-    assert not transport._cwd.joinpath(
-        _remote / "temp_on_server_directory" / "_.txt"
-    ).exists()
+    assert not transport.path_exists(_remote / "temp_on_server_directory" / "_.txt")
 
 
 def test_dynamic_info_direct_size(firecrest_config, monkeypatch, tmpdir: Path):
@@ -172,31 +178,38 @@ def test_dynamic_info_firecrest_version(
     with pytest.raises(BadParameter, match=r".*Invalid input.*"):
         _dynamic_info_firecrest_version(ctx, None, "latest")
 
-    # in case could not get the version from the server, should abort, as it is a required parameter.
-    with patch.object(MockFirecrest, "parameters", autospec=True) as mock_parameters:
-        mock_parameters.return_value = {"there is no version key": "bye bye"}
-        with pytest.raises(Abort):
-            result = _dynamic_info_firecrest_version(ctx, None, "None")
-        capture = capsys.readouterr()
-        assert "Could not get the version of the FirecREST server" in capture.out
+    # For the time-being, we only run this part of the mocked test.
+    # TODO: Also run and mock for th server test
+    if firecrest_config.mocked:
+        # in case it could not get the version from the server, should abort, as it is a required parameter.
+        with patch.object(
+            MockFirecrest, "parameters", autospec=True
+        ) as mock_parameters:
+            mock_parameters.return_value = {"there is no version key": "bye bye"}
+            with pytest.raises(Abort):
+                result = _dynamic_info_firecrest_version(ctx, None, "None")
+            capture = capsys.readouterr()
+            assert "Could not get the version of the FirecREST server" in capture.out
 
-    # in case the version recieved from the server is not supported, should abort, as no magic input can solve this problem.
-    with patch.object(MockFirecrest, "parameters", autospec=True) as mock_parameters:
-        unsupported_version = "0.1"
-        mock_parameters.return_value = {
-            "general": [
-                {
-                    "description": "FirecREST version.",
-                    "name": "FIRECREST_VERSION",
-                    "unit": "",
-                    "value": f"v{unsupported_version}",
-                },
-            ]
-        }
-        with pytest.raises(Abort):
-            result = _dynamic_info_firecrest_version(ctx, None, "None")
-        capture = capsys.readouterr()
-        assert (
-            f"FirecREST api version v{unsupported_version} is not supported"
-            in capture.out
-        )
+        # in case the version recieved from the server is not supported, should abort, as no magic input can solve this problem.
+        with patch.object(
+            MockFirecrest, "parameters", autospec=True
+        ) as mock_parameters:
+            unsupported_version = "0.1"
+            mock_parameters.return_value = {
+                "general": [
+                    {
+                        "description": "FirecREST version.",
+                        "name": "FIRECREST_VERSION",
+                        "unit": "",
+                        "value": f"v{unsupported_version}",
+                    },
+                ]
+            }
+            with pytest.raises(Abort):
+                result = _dynamic_info_firecrest_version(ctx, None, "None")
+            capture = capsys.readouterr()
+            assert (
+                f"FirecREST api version v{unsupported_version} is not supported"
+                in capture.out
+            )
