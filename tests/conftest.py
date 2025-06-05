@@ -21,7 +21,8 @@ from unittest.mock import MagicMock
 from urllib.parse import urlparse
 
 from aiida import orm
-import firecrest
+from firecrest import ClientCredentialsAuth, FirecrestException
+from firecrest.v1.BasicClient import Firecrest
 import pytest
 import requests
 
@@ -91,7 +92,7 @@ class MockFirecrest:
             mock_response = MagicMock()
             mock_response.status_code = 999  # I don't really know
             mock_response.json.return_value = {"error": "Mock error message"}
-            raise firecrest.FirecrestException(mock_response)
+            raise FirecrestException(mock_response)
 
         job_id = next(self.job_id_generator)
 
@@ -148,7 +149,7 @@ class MockFirecrest:
                 mock_response = MagicMock()
                 mock_response.status_code = 999  # I don't really know
                 mock_response.json.return_value = {"error": "Invalid job id"}
-                raise firecrest.FirecrestException([mock_response])
+                raise FirecrestException([mock_response])
             response.append(
                 {
                     "job_data_err": "",
@@ -440,6 +441,7 @@ class ComputerFirecrestConfig:
     builder_metadata_options_custom_scheduler_commands: list[str] = field(
         default_factory=list
     )
+    mocked: bool = False
 
 
 class RequestTelemetry:
@@ -497,14 +499,17 @@ def firecrest_config(
         config = ComputerFirecrestConfig(**config)
         # # rather than use the scratch_path directly, we use a subfolder,
         # # which we can then clean
-        config.workdir = config.workdir + "/pytest_tmp"
-        config.temp_directory = config.temp_directory + "/pytest_tmp"
+        import uuid
+
+        _uuid = uuid.uuid4()
+        config.workdir = config.workdir + f"/pytest_tmp_{_uuid}"
+        config.temp_directory = config.temp_directory + f"/pytest_tmp_{_uuid}"
 
         # # we need to connect to the client here,
         # # to ensure that the scratch path exists and is empty
-        client = firecrest.Firecrest(
+        client = Firecrest(
             firecrest_url=config.url,
-            authorization=firecrest.ClientCredentialsAuth(
+            authorization=ClientCredentialsAuth(
                 config.client_id,
                 Path(config.client_secret).read_text().strip(),
                 config.token_uri,
@@ -569,4 +574,5 @@ def firecrest_config(
             temp_directory=str(_temp_directory),
             api_version="2",
             builder_metadata_options_custom_scheduler_commands=[],
+            mocked=True,
         )

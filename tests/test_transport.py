@@ -27,11 +27,11 @@ def test_mkdir(firecrest_computer: orm.Computer):
 
     _scratch = tmpdir / "sampledir"
     transport.mkdir(_scratch)
-    assert _scratch.exists()
+    assert transport.path_exists(_scratch)
 
     _scratch = tmpdir / "sampledir2" / "subdir"
     transport.makedirs(_scratch)
-    assert _scratch.exists()
+    assert transport.path_exists(_scratch)
 
     # raise if directory already exists
     with pytest.raises(OSError):
@@ -81,12 +81,12 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
     It's written this way to be compatible with the real server testings.
     """
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(transport._temp_directory)
+    tmpdir_remote = FcPath(transport._temp_directory)
 
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
     _local_download = tmpdir / "download"
-    _remote.mkdir()
+    transport.mkdir(_remote)
     _local.mkdir()
     _local_download.mkdir()
 
@@ -354,11 +354,11 @@ def test_get(firecrest_computer: orm.Computer, tmpdir: Path):
     For faster testing, we mock the subfucntions and don't actually do it.
     """
     transport = firecrest_computer.get_transport()
-    tmpdir_remote = Path(transport._temp_directory)
+    tmpdir_remote = FcPath(transport._temp_directory)
 
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
-    _remote.mkdir()
+    transport.mkdir(_remote)
     _local.mkdir()
 
     # check if the code is directing to getfile() or gettree() as expected
@@ -427,7 +427,7 @@ def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     _remote = tmpdir_remote / "remotedir"
     _local = tmpdir / "localdir"
     _local_download = tmpdir / "download"
-    _remote.mkdir()
+    transport.mkdir(_remote)
     _local.mkdir()
     _local_download.mkdir()
     # a typical tree
@@ -584,7 +584,7 @@ def test_gettree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     # transport.get('somepath/abc', 'someremotepath/6889/abc') --> create everything, make_parent = True
     tmpdir_remote = Path(transport._temp_directory)
     _remote = tmpdir_remote / "remotedir"
-    _remote.mkdir()
+    transport.mkdir(_remote)
     _local = tmpdir / "localdir"
     _local_for_upload = tmpdir / "forupload"
     _local.mkdir()
@@ -672,8 +672,8 @@ def test_copy(firecrest_computer: orm.Computer, tmpdir: Path, to_test: str):
     tmpdir_remote = Path(transport._temp_directory)
     _remote_1 = tmpdir_remote / "remotedir_1"
     _remote_2 = tmpdir_remote / "remotedir_2"
-    _remote_1.mkdir()
-    _remote_2.mkdir()
+    transport.mkdir(_remote_1)
+    transport.mkdir(_remote_2)
     _for_upload = tmpdir
 
     # raise if source or destination does not exist
@@ -756,6 +756,7 @@ def test_copyfile(firecrest_computer: orm.Computer, tmpdir: Path):
     Note: this test depends on functional getfile() and putfile() methods, for consistency with the real server tests.
       Before running this test, make sure `test_putfile_getfile` has passed.
     """
+
     transport = firecrest_computer.get_transport()
     testing = transport.copyfile
 
@@ -766,8 +767,8 @@ def test_copyfile(firecrest_computer: orm.Computer, tmpdir: Path):
     _for_download = tmpdir / "forDownload"
     _for_upload.mkdir()
     _for_download.mkdir()
-    _remote_1.mkdir()
-    _remote_2.mkdir()
+    transport.mkdir(_remote_1)
+    transport.mkdir(_remote_2)
 
     # raise if source or destination does not exist
     with pytest.raises(FileNotFoundError):

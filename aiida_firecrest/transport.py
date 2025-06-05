@@ -500,6 +500,16 @@ class FirecrestTransport(BlockingTransport):
                     if c is not None:
                         raise c(self) from exc
                 raise
+            except Exception as exc:
+                # This is a workaround a bug in Firecrest,
+                # where it doesn't return 'X-Exists' as header exception, which it was supposed to.
+                # I could open an issue, but FirecREST v1 is not maintained anymore..
+                # TODO: To be discovered if the same issue also exists in FirecREST v2
+                if "File exists" in str(exc):
+                    raise FileExistsError(str(exc)) from exc
+                # In case the exception is not a HeaderException, just re-raise it
+                # this is useful for debugging
+                raise exc from exc
 
     def chmod(self, path: TPath_Extended, mode: int) -> None:
         """Change the mode of a path to the numeric mode.
