@@ -63,6 +63,7 @@ def firecrest_computer(firecrest_config):
         small_file_size_mb=firecrest_config.small_file_size_mb,
         temp_directory=firecrest_config.temp_directory,
         api_version=firecrest_config.api_version,
+        billing_account=firecrest_config.billing_account,
     )
     return computer
 
@@ -105,10 +106,10 @@ class MockFirecrest:
         for line in lines:
             if "--error" in line:
                 error_file = line.split("=")[1].strip()
-                (Path(script_remote_path).parent / error_file).touch()
+                (Path(script_remote_path).parent / error_file).write_text("touch")
             elif "--output" in line:
                 output_file = line.split("=")[1].strip()
-                (Path(script_remote_path).parent / output_file).touch()
+                (Path(script_remote_path).parent / output_file).write_text("touch")
 
         # Execute the job, this is useful for test_calculation.py
         if "aiida.in" in command:
@@ -502,19 +503,22 @@ def firecrest_config(
         # # which we can then clean
         import uuid
 
-        _uuid = uuid.uuid4()
-        config.workdir = str(Path(config.workdir) / f"pytest_tmp_{_uuid}")
+        config.workdir = str(Path(config.workdir) / f"pytest_tmp_{uuid.uuid4()}")
         config.temp_directory = str(
-            Path(config.temp_directory) / f"/pytest_tmp_{_uuid}"
+            Path(config.temp_directory) / f"pytest_tmp_{uuid.uuid4()}"
         )
 
         # # we need to connect to the client here,
         # # to ensure that the scratch path exists and is empty
+        if Path(config.client_secret).exists():
+            _secret = Path(config.client_secret).read_text().strip()
+        else:
+            _secret = config.client_secret
         client = Firecrest(
             firecrest_url=config.url,
             authorization=ClientCredentialsAuth(
                 config.client_id,
-                Path(config.client_secret).read_text().strip(),
+                _secret,
                 config.token_uri,
             ),
         )
@@ -538,8 +542,9 @@ def firecrest_config(
         # # because they use `rm -r`:
         # # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L347
         if not no_clean:
-            client.simple_delete(config.compute_resource, config.workdir)
-            client.simple_delete(config.compute_resource, config.temp_directory)
+            client.rm(config.compute_resource, config.workdir)
+            client.rm(config.compute_resource, config.temp_directory)
+            pass
 
         # if telemetry is not None:
         #     test_name = request.node.name

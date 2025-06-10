@@ -8,6 +8,9 @@
 ###########################################################################
 """
 Note: order of tests is important, as some tests are dependent on the previous ones.
+
+Note:
+FirecREST cannot send over empty files, therefore I do `Path.write_text("touch")` instead of Path.touch() in all tests.
 """
 
 import os
@@ -25,12 +28,12 @@ def test_mkdir(firecrest_computer: orm.Computer):
     transport = firecrest_computer.get_transport()
     tmpdir = Path(transport._temp_directory)
 
-    _scratch = tmpdir / "sampledir"
-    transport.mkdir(_scratch)
-    assert transport.path_exists(_scratch)
-
     _scratch = tmpdir / "sampledir2" / "subdir"
     transport.makedirs(_scratch)
+    assert transport.path_exists(_scratch)
+
+    _scratch = tmpdir / "sampledir"
+    transport.mkdir(_scratch)
     assert transport.path_exists(_scratch)
 
     # raise if directory already exists
@@ -190,7 +193,7 @@ def test_remove(firecrest_computer: orm.Computer, tmpdir: Path):
     _remote = tmpdir_remote
     _local = tmpdir
 
-    Path(_local / "samplefile").touch()
+    Path(_local / "samplefile").write_text("touch")
 
     # remove a non-empty directory with rmtree()
     _scratch = FcPath(_remote / "sampledir")
@@ -222,7 +225,7 @@ def test_is_file(firecrest_computer: orm.Computer, tmpdir: Path):
     _remote = tmpdir_remote
     _local = tmpdir
 
-    Path(_local / "samplefile").touch()
+    Path(_local / "samplefile").write_text("touch")
     transport.putfile(_local / "samplefile", _remote / "samplefile")
     assert transport.isfile(_remote / "samplefile")
     assert not transport.isfile(_remote / "does_not_exist")
@@ -236,7 +239,7 @@ def test_symlink(firecrest_computer: orm.Computer, tmpdir: Path):
     _remote = tmpdir_remote
     _local = tmpdir
 
-    Path(_local / "samplefile").touch()
+    Path(_local / "samplefile").write_text("touch")
     transport.putfile(_local / "samplefile", _remote / "samplefile")
     transport.symlink(_remote / "samplefile", _remote / "samplelink")
 
@@ -255,10 +258,10 @@ def test_listdir(firecrest_computer: orm.Computer, tmpdir: Path):
     _local = tmpdir
 
     # test basic & recursive
-    Path(_local / "file1").touch()
+    Path(_local / "file1").write_text("touch")
     Path(_local / "dir1").mkdir()
-    Path(_local / ".hidden").touch()
-    Path(_local / "dir1" / "file2").touch()
+    Path(_local / ".hidden").write_text("touch")
+    Path(_local / "dir1" / "file2").write_text("touch")
     transport.putfile(_local / "file1", _remote / "file1")
     transport.mkdir(_remote / "dir1")
     transport.putfile(_local / "dir1" / "file2", _remote / "dir1" / "file2")
@@ -274,7 +277,7 @@ def test_listdir(firecrest_computer: orm.Computer, tmpdir: Path):
 
     # to test symlink
     Path(_local / "dir1" / "dir2").mkdir()
-    Path(_local / "dir1" / "dir2" / "file3").touch()
+    Path(_local / "dir1" / "dir2" / "file3").write_text("touch")
     transport.mkdir(_remote / "dir1" / "dir2")
     transport.putfile(
         _local / "dir1" / "dir2" / "file3", _remote / "dir1" / "dir2" / "file3"
@@ -450,7 +453,7 @@ def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
 
     # raise if local is a file
     with pytest.raises(ValueError):
-        Path(tmpdir / "isfile").touch()
+        Path(tmpdir / "isfile").write_text("touch")
         transport.puttree(tmpdir / "isfile", _remote)
 
     # raise if localpath is relative
@@ -615,7 +618,7 @@ def test_gettree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
         transport.gettree(_remote / "does_not_exist", _local)
 
     # raise if local is a file
-    Path(tmpdir / "isfile").touch()
+    Path(tmpdir / "isfile").write_text("touch")
     with pytest.raises(OSError):
         transport.gettree(_remote, tmpdir / "isfile")
 
@@ -701,7 +704,6 @@ def test_copy(firecrest_computer: orm.Computer, tmpdir: Path, to_test: str):
     # I cannot create & check relative links, because we don't have access on the server side
     # os.symlink(Path("../file1"), _remote_1 / "dir1" / "file10_link")
     # os.symlink(Path("../dir2"), _remote_1 / "dir1" / "dir20_link")
-
     testing(_remote_1, _remote_2)
 
     _root_2 = _remote_2 / Path(_remote_1).name
@@ -774,7 +776,7 @@ def test_copyfile(firecrest_computer: orm.Computer, tmpdir: Path):
     with pytest.raises(FileNotFoundError):
         testing(_remote_1 / "does_not_exist", _remote_2)
     # in this case don't raise and just create the file
-    Path(_for_upload / "_").touch()
+    Path(_for_upload / "_").write_text("touch")
     transport.putfile(_for_upload / "_", _remote_1 / "_")
     testing(_remote_1 / "_", _remote_2 / "does_not_exist")
 

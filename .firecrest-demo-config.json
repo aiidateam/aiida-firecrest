@@ -1,13 +1,13 @@
- {
-    "url": "",
-    "token_uri": "",
-    "client_id": "",
-    "client_secret": "",
-    "compute_resource": "",
-    "temp_directory": "",
+{
+    "url": "http://localhost:8000",
+    "token_uri": "http://localhost:8080/auth/realms/kcrealm/protocol/openid-connect/token",
+    "client_id": "firecrest-test-client",
+    "client_secret": "wZVHVIEd9dkJDh9hMKc6DTvkqXxnDttk",
+    "compute_resource": "cluster-slurm-api",
+    "temp_directory": "/home/fireuser/",
     "small_file_size_mb": 5.0,
-    "workdir": "",
-    "api_version": "1.16.0",
-    "billing_account": "",
+    "workdir": "/home/fireuser/",
+    "billing_account": "myproject",
+    "api_version": "2.2.0",
     "builder_metadata_options_custom_scheduler_commands": []
 }
