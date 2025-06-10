@@ -458,7 +458,12 @@ class FirecrestTransport(BlockingTransport):
 
         self._payoff_override: bool | None = None
 
-        secret = Path(client_secret).read_text().strip()
+        secret = (
+            Path(client_secret).read_text().strip()
+            if Path(client_secret).exists()
+            else client_secret
+        )
+
         try:
             self._client = Firecrest(
                 firecrest_url=self._url,
@@ -540,6 +545,9 @@ class FirecrestTransport(BlockingTransport):
                     raise FileExistsError(str(exc)) from exc
                 # In case the exception is not a HeaderException, just re-raise it
                 # this is useful for debugging
+                if "cannot statx" in str(exc):
+                    raise FileNotFoundError(str(exc)) from exc
+
                 raise exc from exc
 
     def chmod(self, path: TPath_Extended, mode: int) -> None:
@@ -726,6 +734,7 @@ class FirecrestTransport(BlockingTransport):
         except FileExistsError as err:
             if not ignore_existing:
                 raise OSError(f"'{path}' already exists") from err
+            raise
 
     def normalize(self, path: TPath_Extended) -> str:  # type: ignore[override]
         """Normalize a path on the remote."""
@@ -770,6 +779,7 @@ class FirecrestTransport(BlockingTransport):
         destination = str(remotedestination)
 
         if dereference:
+            # note: https://github.com/eth-cscs/pyfirecrest/issues/166
             raise NotImplementedError("copyfile() does not support symlink dereference")
         if not self.path_exists(source):
             raise FileNotFoundError(f"Source file does not exist: {source}")
@@ -965,7 +975,7 @@ class FirecrestTransport(BlockingTransport):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """Get a directory from the remote as a tar file and extract it locally.
+        """Get a directory from the remote as a gzip file and extract it locally.
         This is useful for downloading a directory with many files,
         as it might be more efficient than downloading each file individually.
         Note that this method is not part of the Transport interface, and is not meant to be used publicly.
@@ -977,15 +987,14 @@ class FirecrestTransport(BlockingTransport):
         localpath = str(localpath)
 
         _ = uuid.uuid4()
-        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
+        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.gzip")
 
         # Compress
         self._client.compress(
             self._machine, remotepath, str(remote_path_temp), dereference=dereference
         )
-
         # Download
-        localpath_temp = Path(localpath).joinpath(f"temp_{_}.tar")
+        localpath_temp = Path(localpath).joinpath(f"temp_{_}.gzip")
         try:
             self.getfile(remote_path_temp, localpath_temp)
         finally:
@@ -1087,9 +1096,7 @@ class FirecrestTransport(BlockingTransport):
                 f"Expected a single symlink target, got {len(results)}: {path}"
             )
 
-        # in v2 this might have change
-        # return results[0]["linkTarget"]
-        return FcPath(results[0]["link_target"])
+        return FcPath(results[0]["linkTarget"])
 
     def is_symlink(self, path: TPath_Extended) -> bool:
         """Whether path is a symbolic link."""
@@ -1214,29 +1221,28 @@ class FirecrestTransport(BlockingTransport):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """Put a directory to the remote by sending as tar file in backend.
+        """Put a directory to the remote by sending as gzip file in backend.
         This is useful for uploading a directory with many files,
         as it might be more efficient than uploading each file individually.
         Note that this method is not part of the Transport interface, and is not meant to be used publicly.
 
         :param dereference: If True, follow symlinks. If False, symlinks are ignored from sending over.
         """
-        # this function will be used to send a folder as a tar file to the server and extract it on the server
+        # this function will be used to send a folder as a gzip file to the server and extract it on the server
 
         _ = uuid.uuid4()
 
         localpath = Path(localpath)
         remotepath = str(remotepath)
 
-        tarpath = localpath.parent.joinpath(f"temp_{_}.tar")
-        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
-        with tarfile.open(tarpath, "w", dereference=dereference) as tar:
+        tarpath = localpath.parent.joinpath(f"temp_{_}.gzip")
+        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.gzip")
+        with tarfile.open(tarpath, "w:gz", dereference=dereference) as gzip:
             for root, _, files in os.walk(localpath, followlinks=dereference):
                 for file in files:
                     full_path = os.path.join(root, file)
                     relative_path = os.path.relpath(full_path, localpath)
-                    tar.add(full_path, arcname=relative_path)
-
+                    gzip.add(full_path, arcname=relative_path)
         # Upload
         try:
             self.putfile(tarpath, remote_path_temp)
