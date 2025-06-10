@@ -63,7 +63,9 @@ def test_calculation_file_transfer(
     entry_points.add(NoopParser, "aiida.parsers:testing.noop")
 
     # add a remote file which is used remote_copy_list
-    Path(firecrest_computer.get_workdir()).joinpath("remote_copy.txt").touch()
+    Path(firecrest_computer.get_workdir()).joinpath("remote_copy.txt").write_text(
+        "touch"
+    )
 
     # setup the calculation
     code = orm.InstalledCode(
@@ -132,7 +134,7 @@ class MultiFileCalcjob(engine.CalcJob):
             "folder2/y/z",
         ]:
             path.joinpath(subpath).parent.mkdir(parents=True, exist_ok=True)
-            path.joinpath(subpath).touch()
+            path.joinpath(subpath).write_text("touch")
 
         calcinfo = common.CalcInfo()
         calcinfo.codes_info = [codeinfo]

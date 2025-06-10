@@ -30,7 +30,7 @@ from click.core import Context
 from click.types import ParamType
 from firecrest import ClientCredentialsAuth  # type: ignore[attr-defined]
 from firecrest.FirecrestException import HeaderException
-from firecrest.v1.BasicClient import Firecrest
+from firecrest.v2 import Firecrest  # type: ignore[attr-defined]
 from packaging.version import Version, parse
 
 from aiida_firecrest.utils import (
@@ -110,6 +110,7 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
         temp_directory=value,
         small_file_size_mb=1.0,  # small_file_size_mb is irrelevant here
         api_version="100.0.0",  # version is irrelevant here
+        billing_account="irrelevant",  # billing_account is irrelevant here
     )
 
     # Temp directory routine
@@ -168,57 +169,68 @@ def _dynamic_info_firecrest_version(
             # raise in case the version is not valid, e.g. latest, stable, etc.
             raise click.BadParameter(f"Invalid input {value}") from err
 
-        if parse(value) < parse("1.15.0"):
+        if parse(value) < parse("2.0.0"):
             raise click.BadParameter(f"FirecREST api version {value} is not supported")
         # If version is provided by the user, and it's supported, we will just return it.
         # No print confirmation is needed, to keep things less verbose.
         return value
 
-    firecrest_url = ctx.params["url"]
-    token_uri = ctx.params["token_uri"]
-    client_id = ctx.params["client_id"]
-    compute_resource = ctx.params["compute_resource"]
-    secret = ctx.params["client_secret"]
-    temp_directory = ctx.params["temp_directory"]
+    # The code below is a functional dynamic version retrieval from the server.
+    # However, Firecrest v2 unlike v1, does not provide the api-version of the server.
+    # An issue is opened: https://github.com/eth-cscs/pyfirecrest/issues/157
+    # TODO: once the issue is resolved, adopt the code below to retrieve the version dynamically.
 
-    transport = FirecrestTransport(
-        url=firecrest_url,
-        token_uri=token_uri,
-        client_id=client_id,
-        client_secret=secret,
-        compute_resource=compute_resource,
-        temp_directory=temp_directory,
-        small_file_size_mb=0.0,
-        api_version="100.0.0",  # version is irrelevant here
-    )
+    # firecrest_url = ctx.params["url"]
+    # token_uri = ctx.params["token_uri"]
+    # client_id = ctx.params["client_id"]
+    # compute_resource = ctx.params["compute_resource"]
+    # secret = ctx.params["client_secret"]
+    # temp_directory = ctx.params["temp_directory"]
 
-    parameters = transport._client.parameters()
-    try:
-        info = next(
-            (
-                item
-                for item in parameters["general"]
-                if item["name"] == "FIRECREST_VERSION"
-            ),
-            None,
-        )
-        if info is not None:
-            _version = str(info["value"])
-        else:
-            raise KeyError
-    except KeyError as err:
-        click.echo("Could not get the version of the FirecREST server")
-        raise click.Abort() from err
+    # transport = FirecrestTransport(
+    #     url=firecrest_url,
+    #     token_uri=token_uri,
+    #     client_id=client_id,
+    #     client_secret=secret,
+    #     compute_resource=compute_resource,
+    #     temp_directory=temp_directory,
+    #     small_file_size_mb=0.0,
+    #     api_version="100.0.0",  # version is irrelevant here
+    # )
 
-    if parse(_version) < parse("1.15.0"):
-        click.echo(f"FirecREST api version {_version} is not supported")
-        raise click.Abort()
+    # parameters = transport._client.parameters()
+    # try:
+    #     info = next(
+    #         (
+    #             item
+    #             for item in parameters["general"]
+    #             if item["name"] == "FIRECREST_VERSION"
+    #         ),
+    #         None,
+    #     )
+    #     if info is not None:
+    #         _version = str(info["value"])
+    #     else:
+    #         raise KeyError
+    # except KeyError as err:
+    #     click.echo("Could not get the version of the FirecREST server")
+    #     raise click.Abort() from err
 
-    # for the sake of uniformity, we will print the version in style only if dynamically retrieved.
+    # if parse(_version) < parse("1.15.0"):
+    #     click.echo(f"FirecREST api version {_version} is not supported")
+    #     raise click.Abort()
+
+    # # for the sake of uniformity, we will print the version in style only if dynamically retrieved.
+    # click.echo(
+    #     click.style("Fireport: ", bold=True, fg="magenta") + f"FirecRESTapi: {_version}"
+    # )
+    # return _version
+
     click.echo(
-        click.style("Fireport: ", bold=True, fg="magenta") + f"FirecRESTapi: {_version}"
+        "Due to a bug in FirecREST v2 api version cannot be fetched from the server."
+        "It's now set to 2.0.0, and user input is ignored."
     )
-    return _version
+    return "2.0.0"  # default version, if the user enters 0 or None
 
 
 def _dynamic_info_direct_size(
@@ -236,47 +248,53 @@ def _dynamic_info_direct_size(
     :return: the value of small_file_size_mb.
 
     """
-    import click
 
     if value > 0:
         return value
+    # parameter endpoint is not supported in v2
+    # The code below is commented for now, and it has to adopt and come back,
+    # once this issue is resolved:
+    # https://github.com/eth-cscs/pyfirecrest/issues/162
 
-    firecrest_url = ctx.params["url"]
-    token_uri = ctx.params["token_uri"]
-    client_id = ctx.params["client_id"]
-    compute_resource = ctx.params["compute_resource"]
-    secret = ctx.params["client_secret"]
-    temp_directory = ctx.params["temp_directory"]
+    # import click
+    # firecrest_url = ctx.params["url"]
+    # token_uri = ctx.params["token_uri"]
+    # client_id = ctx.params["client_id"]
+    # compute_resource = ctx.params["compute_resource"]
+    # secret = ctx.params["client_secret"]
+    # temp_directory = ctx.params["temp_directory"]
 
-    transport = FirecrestTransport(
-        url=firecrest_url,
-        token_uri=token_uri,
-        client_id=client_id,
-        client_secret=secret,
-        compute_resource=compute_resource,
-        temp_directory=temp_directory,
-        small_file_size_mb=0.0,
-        api_version="100.0.0",  # version is irrelevant here
-    )
+    # transport = FirecrestTransport(
+    #     url=firecrest_url,
+    #     token_uri=token_uri,
+    #     client_id=client_id,
+    #     client_secret=secret,
+    #     compute_resource=compute_resource,
+    #     temp_directory=temp_directory,
+    #     small_file_size_mb=0.0,
+    #     api_version="100.0.0",  # version is irrelevant here
+    #     billing_account="irrelevant",  # billing_account is irrelevant here
+    # )
 
-    parameters = transport._client.parameters()
-    utilities_max_file_size = next(
-        (
-            item
-            for item in parameters["utilities"]
-            if item["name"] == "UTILITIES_MAX_FILE_SIZE"
-        ),
-        None,
-    )
-    small_file_size_mb = (
-        float(utilities_max_file_size["value"])
-        if utilities_max_file_size is not None
-        else 5.0
-    )
-    click.echo(
-        click.style("Fireport: ", bold=True, fg="magenta")
-        + f"Maximum file size for direct transfer: {small_file_size_mb} MB"
-    )
+    # parameters = transport._client.parameters()
+    # utilities_max_file_size = next(
+    #     (
+    #         item
+    #         for item in parameters["utilities"]
+    #         if item["name"] == "UTILITIES_MAX_FILE_SIZE"
+    #     ),
+    #     None,
+    # )
+    # small_file_size_mb = (
+    #     float(utilities_max_file_size["value"])
+    #     if utilities_max_file_size is not None
+    #     else 5.0
+    # )
+    # click.echo(
+    #     click.style("Fireport: ", bold=True, fg="magenta")
+    #     + f"Maximum file size for direct transfer: {small_file_size_mb} MB"
+    # )
+    small_file_size_mb = 5.0
 
     return small_file_size_mb
 
@@ -357,11 +375,21 @@ class FirecrestTransport(BlockingTransport):
             "api_version",
             {
                 "type": str,
-                "default": "None",
+                "default": "2.0.0",
                 "non_interactive_default": True,
-                "prompt": "FirecREST api version [Enter 0 to get this info from server]",
+                "prompt": "FirecREST api version.",
                 "help": "The version of the FirecREST api deployed on the server",
                 "callback": _dynamic_info_firecrest_version,
+            },
+        ),
+        (
+            "billing_account",
+            {
+                "type": str,
+                "non_interactive_default": False,
+                "prompt": "Billing account for time consuming operations",
+                "help": "According to the FirecREST documentation, operations longer than 5 seconds have to be"
+                " submitted as a job, therefore you need to specify a billing account.",
             },
         ),
         (
@@ -388,6 +416,7 @@ class FirecrestTransport(BlockingTransport):
         temp_directory: str,
         small_file_size_mb: float,
         api_version: str,
+        billing_account: str,
         # note, machine is provided by default,
         # for the hostname, but we don't use that
         # TODO ideally hostname would not be necessary on a computer
@@ -429,7 +458,12 @@ class FirecrestTransport(BlockingTransport):
 
         self._payoff_override: bool | None = None
 
-        secret = Path(client_secret).read_text().strip()
+        secret = (
+            Path(client_secret).read_text().strip()
+            if Path(client_secret).exists()
+            else client_secret
+        )
+
         try:
             self._client = Firecrest(
                 firecrest_url=self._url,
@@ -444,6 +478,8 @@ class FirecrestTransport(BlockingTransport):
 
         if self._api_version < parse("1.16.0"):
             self._payoff_override = False
+
+        self.billing_account = billing_account
 
         # this makes no sense for firecrest, but we need to set this to True
         # otherwise the aiida-core will complain that the transport is not open:
@@ -509,6 +545,9 @@ class FirecrestTransport(BlockingTransport):
                     raise FileExistsError(str(exc)) from exc
                 # In case the exception is not a HeaderException, just re-raise it
                 # this is useful for debugging
+                if "cannot statx" in str(exc):
+                    raise FileNotFoundError(str(exc)) from exc
+
                 raise exc from exc
 
     def chmod(self, path: TPath_Extended, mode: int) -> None:
@@ -690,11 +729,12 @@ class FirecrestTransport(BlockingTransport):
                 # Note see: https://github.com/eth-cscs/firecrest/issues/172
                 # Also see: https://github.com/eth-cscs/firecrest/issues/202
                 # firecrest does not support `exist_ok`, it's somehow blended into `parents`
-                self._client.mkdir(self._machine, path, p=ignore_existing)
+                self._client.mkdir(self._machine, path, create_parents=ignore_existing)
 
         except FileExistsError as err:
             if not ignore_existing:
                 raise OSError(f"'{path}' already exists") from err
+            raise
 
     def normalize(self, path: TPath_Extended) -> str:  # type: ignore[override]
         """Normalize a path on the remote."""
@@ -706,15 +746,23 @@ class FirecrestTransport(BlockingTransport):
     def symlink(
         self, remotesource: TPath_Extended, remotedestination: TPath_Extended
     ) -> None:
-        """Create a symlink on the remote."""
+        """Create a symbolic link between the remote source and the remote
+        destination.
 
-        remotedestination = str(remotedestination)
+        :param remotesource: where the link is pointing to, must be absolute.
+        :param remotedestination: where the link is going to be created, must be absolute
+        """
 
-        target_path = PurePosixPath(remotesource)
-        if not target_path.is_absolute():
+        # remotesource and remotedestination are non descriptive names.
+        # We use those only because the functions signature should be the same as the one in superclass
+
+        link_path = str(remotedestination)
+        source_path = str(remotesource)
+
+        if not PurePosixPath(source_path).is_absolute():
             raise ValueError("target(remotesource) must be an absolute path")
         with self.convert_header_exceptions():
-            self._client.symlink(self._machine, str(target_path), remotedestination)
+            self._client.symlink(self._machine, source_path, link_path)
 
     def copyfile(
         self,
@@ -731,6 +779,7 @@ class FirecrestTransport(BlockingTransport):
         destination = str(remotedestination)
 
         if dereference:
+            # note: https://github.com/eth-cscs/pyfirecrest/issues/166
             raise NotImplementedError("copyfile() does not support symlink dereference")
         if not self.path_exists(source):
             raise FileNotFoundError(f"Source file does not exist: {source}")
@@ -755,7 +804,13 @@ class FirecrestTransport(BlockingTransport):
             # Note although this endpoint states that it is only for directories,
             # it actually uses `cp -r`:
             # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L320
-            self._client.copy(self._machine, source, target)
+            self._client.cp(
+                self._machine,
+                source,
+                target,
+                account=self.billing_account,
+                blocking=True,
+            )
 
     def copytree(
         self,
@@ -861,26 +916,16 @@ class FirecrestTransport(BlockingTransport):
 
         if not self.isfile(remotepath):
             raise FileNotFoundError(f"Source file does not exist: {remotepath}")
-        remote_size = self._lstat(remotepath).st_size
         # if not local.exists():
         #     local.mkdir(parents=True)
         with self.convert_header_exceptions():
-            if remote_size < self._small_file_size_bytes:
-                self._client.simple_download(self._machine, str(remotepath), local)
-            else:
-                # TODO the following is a very basic implementation of downloading a large file
-                # ideally though, if downloading multiple large files (i.e. in gettree),
-                # we would want to probably use asyncio,
-                # to concurrently initiate internal file transfers to the object store (a.k.a. "staging area")
-                # and downloading from the object store to the local machine
-
-                # I investigated asyncio, but it's not performant for this use case.
-                # Becasue in the end, FirecREST server ends up serializing the requests.
-                # see here: https://github.com/eth-cscs/pyfirecrest/issues/94
-                down_obj = self._client.external_download(
-                    self._machine, str(remotepath)
-                )
-                down_obj.finish_download(local)
+            self._client.download(
+                self._machine,
+                str(remotepath),
+                str(local),
+                account=self.billing_account,
+                blocking=True,
+            )
 
         if self.checksum_check:
             self._validate_checksum(local, remotepath)
@@ -911,7 +956,9 @@ class FirecrestTransport(BlockingTransport):
                 sha256_hash.update(byte_block)
         local_hash = sha256_hash.hexdigest()
 
-        remote_hash = self._client.checksum(self._machine, remotepath)
+        # https://github.com/eth-cscs/pyfirecrest/issues/159
+        # checksum's return type has changed in v2 from str to dict. This might be a mistake
+        remote_hash = str(self._client.checksum(self._machine, remotepath))
 
         try:
             assert local_hash == remote_hash
@@ -928,7 +975,7 @@ class FirecrestTransport(BlockingTransport):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """Get a directory from the remote as a tar file and extract it locally.
+        """Get a directory from the remote as a gzip file and extract it locally.
         This is useful for downloading a directory with many files,
         as it might be more efficient than downloading each file individually.
         Note that this method is not part of the Transport interface, and is not meant to be used publicly.
@@ -940,15 +987,14 @@ class FirecrestTransport(BlockingTransport):
         localpath = str(localpath)
 
         _ = uuid.uuid4()
-        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
+        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.gzip")
 
         # Compress
         self._client.compress(
-            self._machine, remotepath, remote_path_temp, dereference=dereference
+            self._machine, remotepath, str(remote_path_temp), dereference=dereference
         )
-
         # Download
-        localpath_temp = Path(localpath).joinpath(f"temp_{_}.tar")
+        localpath_temp = Path(localpath).joinpath(f"temp_{_}.gzip")
         try:
             self.getfile(remote_path_temp, localpath_temp)
         finally:
@@ -1050,9 +1096,7 @@ class FirecrestTransport(BlockingTransport):
                 f"Expected a single symlink target, got {len(results)}: {path}"
             )
 
-        # in v2 this might have change
-        # return results[0]["linkTarget"]
-        return FcPath(results[0]["link_target"])
+        return FcPath(results[0]["linkTarget"])
 
     def is_symlink(self, path: TPath_Extended) -> bool:
         """Whether path is a symbolic link."""
@@ -1134,30 +1178,16 @@ class FirecrestTransport(BlockingTransport):
         if self.isdir(remotepath):
             raise ValueError(f"Destination is a directory: {remotepath}")
 
-        local_size = localpath.stat().st_size
         # note this allows overwriting of existing files
         with self.convert_header_exceptions():
-            if local_size < self._small_file_size_bytes:
-                self._client.simple_upload(
-                    self._machine,
-                    str(localpath),
-                    str(remotepath.parent),
-                    str(remotepath.name),
-                )
-            else:
-                # TODO the following is a very basic implementation of uploading a large file
-                # ideally though, if uploading multiple large files (i.e. in puttree),
-                # we would want to probably use asyncio,
-                # to concurrently upload to the object store (a.k.a. "staging area"),
-                # then wait for all files to finish being transferred to the target location
-
-                # I investigated asyncio, but it's not performant for this use case.
-                # Becasue in the end, FirecREST server ends up serializing the requests.
-                # see here: https://github.com/eth-cscs/pyfirecrest/issues/94
-                up_obj = self._client.external_upload(
-                    self._machine, str(localpath), str(remotepath)
-                )
-                up_obj.finish_upload()
+            self._client.upload(
+                self._machine,
+                str(localpath),
+                str(remotepath.parent),
+                str(remotepath.name),
+                account=self.billing_account,
+                blocking=True,
+            )
 
         if self.checksum_check:
             self._validate_checksum(localpath, str(remotepath))
@@ -1191,29 +1221,28 @@ class FirecrestTransport(BlockingTransport):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """Put a directory to the remote by sending as tar file in backend.
+        """Put a directory to the remote by sending as gzip file in backend.
         This is useful for uploading a directory with many files,
         as it might be more efficient than uploading each file individually.
         Note that this method is not part of the Transport interface, and is not meant to be used publicly.
 
         :param dereference: If True, follow symlinks. If False, symlinks are ignored from sending over.
         """
-        # this function will be used to send a folder as a tar file to the server and extract it on the server
+        # this function will be used to send a folder as a gzip file to the server and extract it on the server
 
         _ = uuid.uuid4()
 
         localpath = Path(localpath)
         remotepath = str(remotepath)
 
-        tarpath = localpath.parent.joinpath(f"temp_{_}.tar")
-        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.tar")
-        with tarfile.open(tarpath, "w", dereference=dereference) as tar:
+        tarpath = localpath.parent.joinpath(f"temp_{_}.gzip")
+        remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.gzip")
+        with tarfile.open(tarpath, "w:gz", dereference=dereference) as gzip:
             for root, _, files in os.walk(localpath, followlinks=dereference):
                 for file in files:
                     full_path = os.path.join(root, file)
                     relative_path = os.path.relpath(full_path, localpath)
-                    tar.add(full_path, arcname=relative_path)
-
+                    gzip.add(full_path, arcname=relative_path)
         # Upload
         try:
             self.putfile(tarpath, remote_path_temp)
@@ -1222,7 +1251,7 @@ class FirecrestTransport(BlockingTransport):
 
         # Attempt extract
         try:
-            self._client.extract(self._machine, remote_path_temp, remotepath)
+            self._client.extract(self._machine, str(remote_path_temp), remotepath)
         finally:
             self.remove(remote_path_temp)
 
@@ -1333,7 +1362,9 @@ class FirecrestTransport(BlockingTransport):
 
         if self.isfile(path):
             with self.convert_header_exceptions():
-                self._client.simple_delete(self._machine, path)
+                self._client.rm(
+                    self._machine, path, account=self.billing_account, blocking=True
+                )
         elif not self.path_exists(path):
             # if the path does not exist, we do not raise an error
             return
@@ -1347,7 +1378,13 @@ class FirecrestTransport(BlockingTransport):
         newpath = str(newpath)
 
         with self.convert_header_exceptions():
-            self._client.mv(self._machine, oldpath, newpath)
+            self._client.mv(
+                self._machine,
+                oldpath,
+                newpath,
+                account=self.billing_account,
+                blocking=True,
+            )
 
     def rmdir(self, path: TPath_Extended) -> None:
         """Remove a directory on the remote.
@@ -1357,7 +1394,9 @@ class FirecrestTransport(BlockingTransport):
 
         if len(self.listdir(path)) == 0:
             with self.convert_header_exceptions():
-                self._client.simple_delete(self._machine, path)
+                self._client.rm(
+                    self._machine, path, account=self.billing_account, blocking=True
+                )
         else:
             raise OSError(f"Directory not empty: {path}")
 
@@ -1372,7 +1411,9 @@ class FirecrestTransport(BlockingTransport):
 
         if self.isdir(path):
             with self.convert_header_exceptions():
-                self._client.simple_delete(self._machine, path)
+                self._client.rm(
+                    self._machine, path, account=self.billing_account, blocking=True
+                )
         elif not self.path_exists(path):
             # if the path does not exist, we do not raise an error
             return
@@ -1383,7 +1424,10 @@ class FirecrestTransport(BlockingTransport):
         """Return the username of the current user.
         return None if the username cannot be determined.
         """
-        return self._client.whoami(machine=self._machine)
+        # whoami is not supported in v2:
+        # https://github.com/eth-cscs/pyfirecrest/issues/160
+        # return self._client.whoami(machine=self._machine)
+        return None
 
     def gotocomputer_command(self, remotedir: TPath_Extended) -> str:
         """Not possible for REST-API.

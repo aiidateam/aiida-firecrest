@@ -81,7 +81,7 @@ def test_validate_temp_directory(
     transport = firecrest_computer.get_transport()
     _remote = transport._temp_directory
     _local = tmpdir
-    Path(tmpdir / "_.txt").touch()
+    Path(tmpdir / "_.txt").write_text("touch")
     transport.mkdir(_remote / "temp_on_server_directory")
     transport.putfile(tmpdir / "_.txt", _remote / "_.txt")
     transport.putfile(tmpdir / "_.txt", _remote / "temp_on_server_directory" / "_.txt")
