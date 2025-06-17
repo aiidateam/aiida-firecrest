@@ -22,7 +22,7 @@ import uuid
 
 from aiida.cmdline.params.options.interactive import InteractiveOption
 from aiida.cmdline.params.options.overridable import OverridableOption
-from aiida.transports.transport import BlockingTransport
+from aiida.transports.transport import BlockingTransport, has_magic
 from aiida.transports.util import FileAttribute
 from click.core import Context
 from click.types import ParamType
@@ -821,7 +821,7 @@ class FirecrestTransport(BlockingTransport):
                 "Dereferencing not implemented in FirecREST server"
             )
 
-        if self.has_magic(remotesource):
+        if has_magic(remotesource):
             for item in self.iglob(remotesource):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
@@ -1085,7 +1085,7 @@ class FirecrestTransport(BlockingTransport):
             self.gettree(remotepath, localpath)
         elif self.isfile(remotepath):
             self.getfile(remotepath, localpath)
-        elif self.has_magic(remotepath):  # type: ignore
+        elif has_magic(remotepath):
             for item in self.iglob(str(remotepath)):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
@@ -1288,7 +1288,7 @@ class FirecrestTransport(BlockingTransport):
         if not local.is_absolute():
             raise ValueError("The localpath must be an absolute path")
 
-        if self.has_magic(str(localpath)):
+        if has_magic(str(localpath)):
             for item in self.iglob(str(localpath)):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
