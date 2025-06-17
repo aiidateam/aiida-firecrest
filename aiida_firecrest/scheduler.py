@@ -22,7 +22,7 @@ from aiida.schedulers.datastructures import JobInfo, JobState, JobTemplate
 from aiida.schedulers.plugins.slurm import _TIME_REGEXP, SlurmJobResource
 from firecrest.FirecrestException import FirecrestException
 
-from .utils import convert_header_exceptions
+from aiida_firecrest.utils import FcPath, JobNotFoundError, convert_header_exceptions
 
 if TYPE_CHECKING:
     from aiida_firecrest.transport import FirecrestTransport
@@ -197,20 +197,18 @@ class FirecrestScheduler(Scheduler):
 
     def submit_job(self, working_directory: str, filename: str) -> str | ExitCode:
         transport = self.transport
-        with convert_header_exceptions({"machine": transport._machine}):
+        with convert_header_exceptions():
             try:
-                # Firecrest v2 does not support remote scripts:
-                # https://github.com/eth-cscs/pyfirecrest/issues/161
-                # Until that is solved, this part of the code is not-functional
-                # result = transport._client.submit(
-                #     system_name=transport._machine,
-                #     working_dir=working_directory,
-                #     script_remote_path=str(Path(working_directory).joinpath(filename)),
-                # )
-                return "None"
+                result = transport._client.submit(
+                    system_name=transport._machine,
+                    working_dir=working_directory,
+                    script_remote_path=str(
+                        FcPath(working_directory).joinpath(filename)
+                    ),
+                )
             except FirecrestException as exc:
                 raise SchedulerError(str(exc)) from exc
-        # return str(result["jobid"])
+        return str(result["jobId"])
 
     def get_jobs(
         self,
@@ -218,49 +216,52 @@ class FirecrestScheduler(Scheduler):
         user: str | None = None,
         as_dict: bool = False,
     ) -> list[JobInfo] | dict[str, JobInfo]:
-        results = []  # type: ignore[var-annotated]
+        results = []
         transport = self.transport
 
-        with convert_header_exceptions({"machine": transport._machine}):
-            # TODO handle pagination (pageSize, pageNumber) if many jobs
-            # This will do pagination
-            try:
-                # for page_iter in itertools.count():
-                #     results += transport._client.job_info(
-                #         transport._machine,
-                #         jobs,
-                #         page_number=page_iter,
-                #         page_size=self._DEFAULT_PAGE_SIZE,
-                #     )
-                #     if len(results) < self._DEFAULT_PAGE_SIZE * (page_iter + 1):
-                #         break
-                if jobs:
-                    for job in jobs:
-                        results += transport._client.job_info(transport._machine, job)
-                else:
-                    # results = transport._client.job_info(
-                    #     transport._machine,
-                    # )
-                    results = [[]]
-            except FirecrestException as exc:
-                # TODO: check what type of error is returned and handle it properly
-                if "Invalid job id" not in str(exc):
-                    # firecrest returns error if the job is completed, while aiida expect a silent return
-                    raise SchedulerError(str(exc)) from exc
+        # If the job is completed, while aiida expect a silent return
+        if jobs:
+            for job in jobs:
+                try:
+                    with convert_header_exceptions():
+                        # Note: pyfirecrest expects the job id as an integer
+                        results += transport._client.job_info(
+                            transport._machine, str(job)
+                        )
+                except FirecrestException as exc:
+                    raise SchedulerError(
+                        f"Error retrieving job {job} from the Firecrest server: {exc}"
+                    ) from exc
+                except JobNotFoundError:
+                    # If the job is not found, we just skip it
+                    # this is to be consistent with aiida-firecrest-v1
+                    # TODO: investigate this, if not needed, raise
+                    pass
+        else:
+            results = [[]]
         job_list = []
         for raw_result in results:
             # TODO: probably the if below is not needed, because recently
             # the server should return only the jobs of the current user
-            if user is not None and raw_result["user"] != user:
+            job_state_raw = raw_result["status"]["state"]
+            job_owner = raw_result["user"]
+
+            if user is not None and job_owner != user:
                 continue
+            # if the job is completed or cancelled, we skip it
+            if job_state_raw in ["COMPLETED", "CANCELLED", "FAILED", "TIMEOUT"]:
+                self.logger.debug(
+                    f"Skipping from `func::get_job()`! job {raw_result['jobId']} with state {job_state_raw} "
+                )
+                continue
+
             this_job = JobInfo()  # type: ignore
 
-            this_job.job_id = raw_result["jobid"]
+            this_job.job_owner = job_owner
+            this_job.job_id = str(raw_result["jobId"])
             # TODO: firecrest does not return the annotation, so set to an empty string.
             # To be investigated how important that is.
             this_job.annotation = ""
-
-            job_state_raw = raw_result["state"]
 
             try:
                 job_state_string = _MAP_STATUS_SLURM[job_state_raw]
@@ -295,16 +296,13 @@ class FirecrestScheduler(Scheduler):
             this_job.job_state = job_state_string
 
             # The rest is optional
-
-            this_job.job_owner = raw_result["user"]
-
             try:
-                this_job.num_machines = int(raw_result["nodes"])
+                this_job.num_machines = int(raw_result["allocationNodes"])
             except ValueError:
                 self.logger.warning(
                     "The number of allocated nodes is not "
                     "an integer ({}) for job id {}!".format(
-                        raw_result["nodes"], this_job.job_id
+                        raw_result["allocationNodes"], this_job.job_id
                     )
                 )
 
@@ -325,19 +323,19 @@ class FirecrestScheduler(Scheduler):
             # I just store is as a raw string for the moment, and I leave
             # this_job.allocated_machines undefined
             if this_job.job_state == JobState.RUNNING:
-                this_job.allocated_machines_raw = raw_result["nodelist"]
+                this_job.allocated_machines_raw = raw_result["allocationNodes"]
 
             this_job.queue_name = raw_result["partition"]
 
             try:
-                time_left = self._convert_time(raw_result["time_left"])
-                start_time = self._convert_time(raw_result["start_time"])
+                # time_limit = self._convert_time(raw_result["time"]["limit"])
+                # note: v2 already returns in integer format, no need to convert
+                time_limit = raw_result["time"]["limit"]
 
-                if time_left is None or start_time is None:
+                if time_limit is None:
                     this_job.requested_wallclock_time_seconds = 0
                 else:
-                    this_job.requested_wallclock_time_seconds = time_left + start_time
-
+                    this_job.requested_wallclock_time_seconds = time_limit
             except ValueError:
                 self.logger.warning(
                     f"Couldn't parse the time limit for job id {this_job.job_id}"
@@ -347,9 +345,7 @@ class FirecrestScheduler(Scheduler):
             # and may be not set (in my test, it is set to zero)
             if this_job.job_state == JobState.RUNNING:
                 try:
-                    wallclock_time_seconds = self._convert_time(
-                        raw_result["start_time"]
-                    )
+                    wallclock_time_seconds = raw_result["time"]["elapsed"]
                     if wallclock_time_seconds is not None:
                         this_job.wallclock_time_seconds = wallclock_time_seconds
                     else:
@@ -367,7 +363,9 @@ class FirecrestScheduler(Scheduler):
             #         self.logger.warning(f'Error parsing dispatch_time for job id {this_job.job_id}')
 
             try:
-                this_job.submission_time = self._parse_time_string(raw_result["time"])
+                this_job.submission_time = self._parse_time_string(
+                    raw_result["time"]["start"]
+                )
             except ValueError:
                 self.logger.warning(
                     f"Couldn't parse submission_time for job id {this_job.job_id}"
@@ -404,7 +402,7 @@ class FirecrestScheduler(Scheduler):
 
     def kill_job(self, jobid: str) -> bool:
         transport = self.transport
-        with convert_header_exceptions({"machine": transport._machine}):
+        with convert_header_exceptions():
             transport._client.cancel_job(transport._machine, jobid)
         return True
 

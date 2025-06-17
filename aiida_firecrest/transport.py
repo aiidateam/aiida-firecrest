@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 import fnmatch
 import hashlib
 import os
@@ -29,22 +27,10 @@ from aiida.transports.util import FileAttribute
 from click.core import Context
 from click.types import ParamType
 from firecrest import ClientCredentialsAuth  # type: ignore[attr-defined]
-from firecrest.FirecrestException import HeaderException
 from firecrest.v2 import Firecrest  # type: ignore[attr-defined]
 from packaging.version import Version, parse
 
-from aiida_firecrest.utils import (
-    _COMMON_HEADER_EXC,
-    FcPath,
-    TPath_Extended,
-    disable_fc_logging,
-)
-
-try:
-    # available in python 3.11
-    from typing import Self  # type: ignore
-except ImportError:
-    from typing_extensions import Self
+from aiida_firecrest.utils import FcPath, TPath_Extended, convert_header_exceptions
 
 
 class ValidAuthOption(TypedDict, total=False):
@@ -518,38 +504,6 @@ class FirecrestTransport(BlockingTransport):
         """
         pass
 
-    @contextmanager
-    def convert_header_exceptions(
-        self, convert: None | dict[str, Callable[[Self], Exception] | None] = None
-    ) -> Iterator[None]:
-        """Catch HeaderException and re-raise as an alternative."""
-        converters: dict[str, Callable[[Self], Exception] | None] = {
-            **_COMMON_HEADER_EXC,
-            **(convert or {}),
-        }
-        with disable_fc_logging():
-            try:
-                yield
-            except HeaderException as exc:
-                for header in exc.responses[-1].headers:
-                    c = converters.get(header)
-                    if c is not None:
-                        raise c(self) from exc
-                raise
-            except Exception as exc:
-                # This is a workaround a bug in Firecrest,
-                # where it doesn't return 'X-Exists' as header exception, which it was supposed to.
-                # I could open an issue, but FirecREST v1 is not maintained anymore..
-                # TODO: To be discovered if the same issue also exists in FirecREST v2
-                if "File exists" in str(exc):
-                    raise FileExistsError(str(exc)) from exc
-                # In case the exception is not a HeaderException, just re-raise it
-                # this is useful for debugging
-                if "cannot statx" in str(exc):
-                    raise FileNotFoundError(str(exc)) from exc
-
-                raise exc from exc
-
     def chmod(self, path: TPath_Extended, mode: int) -> None:
         """Change the mode of a path to the numeric mode.
 
@@ -563,7 +517,7 @@ class FirecrestTransport(BlockingTransport):
         # i.e. this is chmod, not lchmod
         if not isinstance(mode, int):
             raise TypeError("mode must be an integer")
-        with self.convert_header_exceptions(
+        with convert_header_exceptions(
             {"X-Invalid-Mode": lambda p: ValueError(f"invalid mode: {mode}")}
         ):
             self._client.chmod(self._machine, path, str(mode))
@@ -579,7 +533,7 @@ class FirecrestTransport(BlockingTransport):
         """
 
         path = str(path)
-        with self.convert_header_exceptions():
+        with convert_header_exceptions():
             stats = self._client.stat(self._machine, path, dereference=True)
         return os.stat_result(
             (
@@ -603,7 +557,7 @@ class FirecrestTransport(BlockingTransport):
         """
 
         path = str(path)
-        with self.convert_header_exceptions():
+        with convert_header_exceptions():
             stats = self._client.stat(self._machine, path, dereference=False)
         return os.stat_result(
             (
@@ -689,7 +643,7 @@ class FirecrestTransport(BlockingTransport):
             # This is just to match the behavior of ls
             path += "/"
 
-        with self.convert_header_exceptions():
+        with convert_header_exceptions():
             results = self._client.list_files(
                 self._machine, path, show_hidden=hidden, recursive=recursive
             )
@@ -725,7 +679,7 @@ class FirecrestTransport(BlockingTransport):
 
         path = str(path)
         try:
-            with self.convert_header_exceptions():
+            with convert_header_exceptions():
                 # Note see: https://github.com/eth-cscs/firecrest/issues/172
                 # Also see: https://github.com/eth-cscs/firecrest/issues/202
                 # firecrest does not support `exist_ok`, it's somehow blended into `parents`
@@ -761,7 +715,7 @@ class FirecrestTransport(BlockingTransport):
 
         if not PurePosixPath(source_path).is_absolute():
             raise ValueError("target(remotesource) must be an absolute path")
-        with self.convert_header_exceptions():
+        with convert_header_exceptions():
             self._client.symlink(self._machine, source_path, link_path)
 
     def copyfile(
@@ -800,7 +754,7 @@ class FirecrestTransport(BlockingTransport):
 
         source = str(source)
         target = str(target)
-        with self.convert_header_exceptions():
+        with convert_header_exceptions():
             # Note although this endpoint states that it is only for directories,
             # it actually uses `cp -r`:
             # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L320
@@ -918,7 +872,7 @@ class FirecrestTransport(BlockingTransport):
             raise FileNotFoundError(f"Source file does not exist: {remotepath}")
         # if not local.exists():
         #     local.mkdir(parents=True)
-        with self.convert_header_exceptions():
+        with convert_header_exceptions():
             self._client.download(
                 self._machine,
                 str(remotepath),
@@ -1179,7 +1133,7 @@ class FirecrestTransport(BlockingTransport):
             raise ValueError(f"Destination is a directory: {remotepath}")
 
         # note this allows overwriting of existing files
-        with self.convert_header_exceptions():
+        with convert_header_exceptions():
             self._client.upload(
                 self._machine,
                 str(localpath),
@@ -1361,7 +1315,7 @@ class FirecrestTransport(BlockingTransport):
         path = str(path)
 
         if self.isfile(path):
-            with self.convert_header_exceptions():
+            with convert_header_exceptions():
                 self._client.rm(
                     self._machine, path, account=self.billing_account, blocking=True
                 )
@@ -1377,7 +1331,7 @@ class FirecrestTransport(BlockingTransport):
         oldpath = str(oldpath)
         newpath = str(newpath)
 
-        with self.convert_header_exceptions():
+        with convert_header_exceptions():
             self._client.mv(
                 self._machine,
                 oldpath,
@@ -1393,7 +1347,7 @@ class FirecrestTransport(BlockingTransport):
         path = str(path)
 
         if len(self.listdir(path)) == 0:
-            with self.convert_header_exceptions():
+            with convert_header_exceptions():
                 self._client.rm(
                     self._machine, path, account=self.billing_account, blocking=True
                 )
@@ -1410,7 +1364,7 @@ class FirecrestTransport(BlockingTransport):
         path = str(path)
 
         if self.isdir(path):
-            with self.convert_header_exceptions():
+            with convert_header_exceptions():
                 self._client.rm(
                     self._machine, path, account=self.billing_account, blocking=True
                 )

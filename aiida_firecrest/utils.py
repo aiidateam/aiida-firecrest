@@ -87,40 +87,15 @@ def disable_fc_logging() -> Iterator[None]:
 
 @contextmanager
 def convert_header_exceptions(
-    data: dict[str, Any],
-    updates: dict[str, Callable[[dict[str, Any]], Exception]] | None = None,
+    convert: None | dict[str, Callable[[Self], Exception] | None] = None
 ) -> Iterator[None]:
-    """Catch HeaderException and re-raise as an alternative.
-
-    Default conversions are:
-    - X-Timeout: ApiTimeoutError
-    - X-Machine-Does-Not-Exist: MachineDoesNotExistError
-    - X-Machine-Not-Available: PermissionError
-    - X-Permission-Denied: PermissionError
-    - X-Not-Found: FileNotFoundError
-    - X-Not-A-Directory: NotADirectoryError
-    - X-Exists: FileExistsError
-    - X-Invalid-Path: FileNotFoundError
-    - X-A-Directory: IsADirectoryError
-    - X-Size-Limit: FileSizeExceeded
-    - X-Sbatch-Error: SchedulerError
-
-    """
-    converters: dict[str, Callable[[dict[str, Any]], Exception]] = {
-        "X-Timeout": ApiTimeoutError,
-        "X-Machine-Does-Not-Exist": MachineDoesNotExistError,
-        "X-Machine-Not-Available": PermissionError,
-        "X-Permission-Denied": PermissionError,
-        "X-Not-Found": FileNotFoundError,
-        "X-Not-A-Directory": NotADirectoryError,
-        "X-Exists": FileExistsError,
-        "X-Invalid-Path": FileNotFoundError,
-        "X-A-Directory": IsADirectoryError,
-        "X-Size-Limit": FileSizeExceededError,
-        "X-Sbatch-Error": SchedulerError,
+    """Catch HeaderException and re-raise as an alternative."""
+    converters: dict[str, Callable[[Self], Exception] | None] = {
+        **_COMMON_HEADER_EXC,
+        **(convert or {}),
     }
-    if updates is not None:
-        converters.update(updates)
+    if convert is not None:
+        converters.update(convert)
     with disable_fc_logging():
         try:
             yield
@@ -128,8 +103,23 @@ def convert_header_exceptions(
             for header in exc.responses[-1].headers:
                 c = converters.get(header)
                 if c is not None:
-                    raise c(data) from exc
+                    raise c(exc) if callable(c) else c from exc
             raise
+        except Exception as exc:
+            # This is a workaround a bug in Firecrest,
+            # where it doesn't return 'X-Exists' as header exception, which it was supposed to.
+            # I could open an issue, but FirecREST v1 is not maintained anymore..
+            # TODO: To be discovered if the same issue also exists in FirecREST v2
+            if "File exists" in str(exc):
+                raise FileExistsError(str(exc)) from exc
+            # In case the exception is not a HeaderException, just re-raise it
+            # this is useful for debugging
+            if "cannot statx" in str(exc):
+                raise FileNotFoundError(str(exc)) from exc
+            if "Job not found" in str(exc):
+                raise JobNotFoundError from exc
+
+            raise exc from exc
 
 
 class ApiTimeoutError(TimeoutError):
@@ -159,6 +149,10 @@ class FileSizeExceededError(OSError):
         super().__init__(msg)
 
 
+class JobNotFoundError(Exception):
+    """The job was not found on the remote server."""
+
+
 _COMMON_HEADER_EXC: dict[str, Callable[[dict[str, Any]], Exception] | None] = {
     "X-Timeout": ApiTimeoutError,
     "X-Machine-Does-Not-Exist": MachineDoesNotExistError,
@@ -169,4 +163,6 @@ _COMMON_HEADER_EXC: dict[str, Callable[[dict[str, Any]], Exception] | None] = {
     "X-Exists": FileExistsError,
     "X-Invalid-Path": FileNotFoundError,
     "X-A-Directory": IsADirectoryError,
+    "X-Size-Limit": FileSizeExceededError,
+    "X-Sbatch-Error": SchedulerError,
 }
