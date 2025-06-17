@@ -76,8 +76,9 @@ def test_get_and_kill_jobs(
     scheduler = FirecrestScheduler()
     scheduler.set_transport(transport)
 
-    # verify that no error is raised in the case of an invalid job id 000
-    scheduler.get_jobs(["000"])
+    # verify that no error is raised in the case of a non-existing job
+    # apparantly, aiida expects such behaviour
+    scheduler.get_jobs(["41324566"])
 
     custom_scheduler_commands = "\n    ".join(
         firecrest_config.builder_metadata_options_custom_scheduler_commands
@@ -109,6 +110,7 @@ def test_get_and_kill_jobs(
     scheduler._DEFAULT_PAGE_SIZE = 2
     result = scheduler.get_jobs(joblist)
     assert len(result) == 5
+
     for i in range(5):
         assert result[i].job_id in joblist
         # TODO: one could check states as well
