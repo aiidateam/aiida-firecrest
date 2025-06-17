@@ -1374,14 +1374,14 @@ class FirecrestTransport(BlockingTransport):
         else:
             raise OSError(f"Path is not a directory: {path}")
 
-    def whoami(self) -> str | None:
+    def whoami(self) -> str:
         """Return the username of the current user.
         return None if the username cannot be determined.
         """
         # whoami is not supported in v2:
         # https://github.com/eth-cscs/pyfirecrest/issues/160
         # return self._client.whoami(machine=self._machine)
-        return None
+        return str(self._client.userinfo(system_name=self._machine)["user"]["name"])
 
     def gotocomputer_command(self, remotedir: TPath_Extended) -> str:
         """Not possible for REST-API.

@@ -17,6 +17,8 @@ from aiida.manage.tests.pytest_fixtures import EntryPointManager
 from aiida.parsers import Parser
 import pytest
 
+from aiida_firecrest.utils import FcPath
+
 
 @pytest.fixture(name="no_retries")
 def _no_retries():
@@ -55,16 +57,19 @@ def test_calculation_basic(firecrest_computer: orm.Computer, firecrest_config):
 
 @pytest.mark.usefixtures("aiida_profile_clean", "no_retries")
 def test_calculation_file_transfer(
-    firecrest_computer: orm.Computer, entry_points: EntryPointManager
+    firecrest_computer: orm.Computer, entry_points: EntryPointManager, tmpdir: Path
 ):
     """Test a calculation, with multiple files copied/uploaded/retrieved."""
     # add temporary entry points
     entry_points.add(MultiFileCalcjob, "aiida.calculations:testing.multifile")
     entry_points.add(NoopParser, "aiida.parsers:testing.noop")
 
-    # add a remote file which is used remote_copy_list
-    Path(firecrest_computer.get_workdir()).joinpath("remote_copy.txt").write_text(
-        "touch"
+    # add a remote file which is used by remote_copy_list
+    touched_file = Path(tmpdir / "remote_copy.txt")
+    touched_file.write_text("touch")
+    transport = firecrest_computer.get_transport()
+    transport.put(
+        str(touched_file), FcPath(firecrest_computer.get_workdir()) / "remote_copy.txt"
     )
 
     # setup the calculation

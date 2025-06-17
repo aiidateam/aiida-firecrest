@@ -15,10 +15,10 @@ import pytest
 
 
 @pytest.mark.usefixtures("aiida_profile_clean")
-def test_whoami(firecrest_computer: orm.Computer):
+def test_whoami(firecrest_computer: orm.Computer, firecrest_config):
     """check if it is possible to determine the username."""
     transport = firecrest_computer.get_transport()
-    assert isinstance(transport.whoami(), str)
+    assert transport.whoami() == firecrest_config.username
 
 
 def test_create_secret_file_with_existing_file(tmpdir: Path):
