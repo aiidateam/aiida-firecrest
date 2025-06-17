@@ -9,5 +9,6 @@
     "workdir": "/home/fireuser/",
     "billing_account": "myproject",
     "api_version": "2.2.0",
+    "username": "fireuser",
     "builder_metadata_options_custom_scheduler_commands": []
 }

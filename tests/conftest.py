@@ -439,6 +439,7 @@ class ComputerFirecrestConfig:
     workdir: str
     api_version: str
     billing_account: str
+    username: str
     small_file_size_mb: float = 1.0
     builder_metadata_options_custom_scheduler_commands: list[str] = field(
         default_factory=list
@@ -586,4 +587,5 @@ def firecrest_config(
             billing_account="billing_account",
             builder_metadata_options_custom_scheduler_commands=[],
             mocked=True,
+            username="test_user",
         )
