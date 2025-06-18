@@ -1,11 +1,11 @@
-###########################################################################
-# Copyright (c), The AiiDA team. All rights reserved.                     #
-# This file is part of the AiiDA code.                                    #
-#                                                                         #
-# The code is hosted on GitHub at https://github.com/aiidateam/aiida-core #
-# For further information on the license, see the LICENSE.txt file        #
-# For further information please visit http://www.aiida.net               #
-###########################################################################
+################################################################################
+# Copyright (c), The AiiDA team. All rights reserved.                          #
+# This file is part of the AiiDA code.                                         #
+#                                                                              #
+# The code is hosted on GitHub at https://github.com/aiidateam/aiida-firecrest #
+# For further information on the license, see the LICENSE.txt file             #
+# For further information please visit http://www.aiida.net                    #
+################################################################################
 """Transport interface."""
 
 from __future__ import annotations
@@ -821,7 +821,7 @@ class FirecrestTransport(BlockingTransport):
                 "Dereferencing not implemented in FirecREST server"
             )
 
-        if has_magic(remotesource):
+        if has_magic(str(remotesource)):
             for item in self.iglob(remotesource):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""
@@ -1085,7 +1085,7 @@ class FirecrestTransport(BlockingTransport):
             self.gettree(remotepath, localpath)
         elif self.isfile(remotepath):
             self.getfile(remotepath, localpath)
-        elif has_magic(remotepath):
+        elif has_magic(str(remotepath)):
             for item in self.iglob(str(remotepath)):  # type: ignore
                 # item is of str type, so we need to split it to get the file name
                 filename = item.split("/")[-1] if self.isfile(item) else ""

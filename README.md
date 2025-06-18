@@ -99,7 +99,6 @@ If you encounter any problems/bug, please don't hesitate to open an issue on thi
 Calculations are now running successfully, however, there are still issues regarding efficiency, Could be improved:
 
 1. Monitoring / management of API request rates could to be improved. Currently this is left up to pyfirecrest.
-2. Each transfer request includes 2 seconds of `sleep` time, imposed by pyfirecrest. One can takes use of their `async` client, but with current design of `aiida-core`, the gain will be minimum. (see the [closing comment of issue#94 on pyfirecrest](https://github.com/eth-cscs/pyfirecrest/issues/94) and [PR#6079 on aiida-core ](https://github.com/aiidateam/aiida-core/pull/6079))
 
 ## For developers
 
