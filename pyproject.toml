@@ -26,7 +26,7 @@ requires-python = ">=3.9"
 dependencies = [
     "aiida-core@git+https://github.com/aiidateam/aiida-core.git@2d8dd7a",
     "click",
-    "pyfirecrest>=3.2.0",
+    "pyfirecrest>=3.2.1",
     "pyyaml",
 ]
 
