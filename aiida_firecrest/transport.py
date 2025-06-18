@@ -155,7 +155,7 @@ def _dynamic_info_firecrest_version(
             # raise in case the version is not valid, e.g. latest, stable, etc.
             raise click.BadParameter(f"Invalid input {value}") from err
 
-        if parse(value) < parse("2.0.0"):
+        if parse(value) < parse("2.2.8"):
             raise click.BadParameter(f"FirecREST api version {value} is not supported")
         # If version is provided by the user, and it's supported, we will just return it.
         # No print confirmation is needed, to keep things less verbose.
@@ -361,7 +361,7 @@ class FirecrestTransport(BlockingTransport):
             "api_version",
             {
                 "type": str,
-                "default": "2.0.0",
+                "default": "2.2.8",
                 "non_interactive_default": True,
                 "prompt": "FirecREST api version.",
                 "help": "The version of the FirecREST api deployed on the server",
@@ -732,9 +732,6 @@ class FirecrestTransport(BlockingTransport):
         source = str(remotesource)
         destination = str(remotedestination)
 
-        if dereference:
-            # note: https://github.com/eth-cscs/pyfirecrest/issues/166
-            raise NotImplementedError("copyfile() does not support symlink dereference")
         if not self.path_exists(source):
             raise FileNotFoundError(f"Source file does not exist: {source}")
         if not self.isfile(source):
@@ -742,11 +739,13 @@ class FirecrestTransport(BlockingTransport):
         if not self.path_exists(destination) and not self.isfile(source):
             raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
-        self._copy_to(source, destination)
+        self._copy_to(source, destination, dereference)
         # I removed symlink copy, becasue it's really not a file copy, it's a link copy
         # and aiida-ssh have it in buggy manner, prrobably it's not used anyways
 
-    def _copy_to(self, source: TPath_Extended, target: TPath_Extended) -> None:
+    def _copy_to(
+        self, source: TPath_Extended, target: TPath_Extended, dereference: bool
+    ) -> None:
         """Copy source path to the target path. Both paths must be on remote.
 
         Works for both files and directories (in which case the whole tree is copied).
@@ -759,9 +758,10 @@ class FirecrestTransport(BlockingTransport):
             # it actually uses `cp -r`:
             # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L320
             self._client.cp(
-                self._machine,
-                source,
-                target,
+                system_name=self._machine,
+                source_path=source,
+                target_path=target,
+                dereference=dereference,
                 account=self.billing_account,
                 blocking=True,
             )
@@ -780,10 +780,7 @@ class FirecrestTransport(BlockingTransport):
 
         source = remotesource
         destination = remotedestination
-        if dereference:
-            raise NotImplementedError(
-                "Dereferencing not implemented in FirecREST server"
-            )
+
         if not self.path_exists(source):
             raise FileNotFoundError(f"Source file does not exist: {source}")
         if not self.isdir(source):
@@ -791,7 +788,7 @@ class FirecrestTransport(BlockingTransport):
         if not self.path_exists(destination):
             raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
-        self._copy_to(source, destination)
+        self._copy_to(source, destination, dereference)
 
     def copy(
         self,
@@ -816,10 +813,6 @@ class FirecrestTransport(BlockingTransport):
         if not recursive:
             # TODO this appears to not actually be used upstream, so just remove there
             raise NotImplementedError("Non-recursive copy not implemented")
-        if dereference:
-            raise NotImplementedError(
-                "Dereferencing not implemented in FirecREST server"
-            )
 
         if has_magic(str(remotesource)):
             for item in self.iglob(remotesource):  # type: ignore
@@ -838,7 +831,7 @@ class FirecrestTransport(BlockingTransport):
         if not self.path_exists(remotedestination) and not self.isfile(remotesource):
             raise FileNotFoundError(f"Destination does not exist: {remotedestination}")
 
-        self._copy_to(remotesource, remotedestination)
+        self._copy_to(remotesource, remotedestination, dereference)
 
     # TODO do get/put methods need to handle glob patterns?
     # Apparently not, but I'm not clear how glob() iglob() are going to behave here. We may need to implement them.
