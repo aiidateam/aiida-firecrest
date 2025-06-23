@@ -32,6 +32,8 @@ from packaging.version import Version, parse
 
 from aiida_firecrest.utils import FcPath, TPath_Extended, convert_header_exceptions
 
+_MINIMUM_API_VERSION = "2.2.8"  # minimum supported version of FirecREST API
+
 
 class ValidAuthOption(TypedDict, total=False):
     option: OverridableOption | None  # existing option
@@ -155,68 +157,52 @@ def _dynamic_info_firecrest_version(
             # raise in case the version is not valid, e.g. latest, stable, etc.
             raise click.BadParameter(f"Invalid input {value}") from err
 
-        if parse(value) < parse("2.2.8"):
-            raise click.BadParameter(f"FirecREST api version {value} is not supported")
+        if parse(value) < parse(_MINIMUM_API_VERSION):
+            raise click.BadParameter(
+                f"FirecREST api version {value} is not supported,"
+                " minimum supported version is {_MINIMUM_API_VERSION}"
+            )
         # If version is provided by the user, and it's supported, we will just return it.
         # No print confirmation is needed, to keep things less verbose.
         return value
 
-    # The code below is a functional dynamic version retrieval from the server.
-    # However, Firecrest v2 unlike v1, does not provide the api-version of the server.
-    # An issue is opened: https://github.com/eth-cscs/pyfirecrest/issues/157
-    # TODO: once the issue is resolved, adopt the code below to retrieve the version dynamically.
+    firecrest_url = ctx.params["url"]
+    token_uri = ctx.params["token_uri"]
+    client_id = ctx.params["client_id"]
+    compute_resource = ctx.params["compute_resource"]
+    secret = ctx.params["client_secret"]
+    temp_directory = ctx.params["temp_directory"]
+    billing_account = ctx.params["billing_account"]
 
-    # firecrest_url = ctx.params["url"]
-    # token_uri = ctx.params["token_uri"]
-    # client_id = ctx.params["client_id"]
-    # compute_resource = ctx.params["compute_resource"]
-    # secret = ctx.params["client_secret"]
-    # temp_directory = ctx.params["temp_directory"]
-
-    # transport = FirecrestTransport(
-    #     url=firecrest_url,
-    #     token_uri=token_uri,
-    #     client_id=client_id,
-    #     client_secret=secret,
-    #     compute_resource=compute_resource,
-    #     temp_directory=temp_directory,
-    #     small_file_size_mb=0.0,
-    #     api_version="100.0.0",  # version is irrelevant here
-    # )
-
-    # parameters = transport._client.parameters()
-    # try:
-    #     info = next(
-    #         (
-    #             item
-    #             for item in parameters["general"]
-    #             if item["name"] == "FIRECREST_VERSION"
-    #         ),
-    #         None,
-    #     )
-    #     if info is not None:
-    #         _version = str(info["value"])
-    #     else:
-    #         raise KeyError
-    # except KeyError as err:
-    #     click.echo("Could not get the version of the FirecREST server")
-    #     raise click.Abort() from err
-
-    # if parse(_version) < parse("1.15.0"):
-    #     click.echo(f"FirecREST api version {_version} is not supported")
-    #     raise click.Abort()
-
-    # # for the sake of uniformity, we will print the version in style only if dynamically retrieved.
-    # click.echo(
-    #     click.style("Fireport: ", bold=True, fg="magenta") + f"FirecRESTapi: {_version}"
-    # )
-    # return _version
-
-    click.echo(
-        "Due to a bug in FirecREST v2 api version cannot be fetched from the server."
-        "It's now set to 2.0.0, and user input is ignored."
+    transport = FirecrestTransport(
+        url=firecrest_url,
+        token_uri=token_uri,
+        client_id=client_id,
+        client_secret=secret,
+        compute_resource=compute_resource,
+        temp_directory=temp_directory,
+        small_file_size_mb=0.0,
+        billing_account=billing_account,
+        api_version="100.0.0",  # version is irrelevant here
     )
-    return "2.0.0"  # default version, if the user enters 0 or None
+
+    _version = transport._client.server_version()
+    if not _version:
+        click.echo("Could not get the version of the FirecREST server")
+        raise click.Abort()
+
+    if parse(_version) < parse(_MINIMUM_API_VERSION):
+        click.echo(
+            f"FirecREST api version {value} is not supported,"
+            f" minimum supported version is {_MINIMUM_API_VERSION}"
+        )
+        raise click.Abort()
+
+    # for the sake of uniformity, we will print the version in style only if dynamically retrieved.
+    click.echo(
+        click.style("Fireport: ", bold=True, fg="magenta") + f"FirecRESTapi: {_version}"
+    )
+    return str(_version)
 
 
 def _dynamic_info_direct_size(
@@ -348,6 +334,16 @@ class FirecrestTransport(BlockingTransport):
             },
         ),
         (
+            "billing_account",
+            {
+                "type": str,
+                "non_interactive_default": False,
+                "prompt": "Billing account for time consuming operations",
+                "help": "According to the FirecREST documentation, operations longer than 5 seconds have to be"
+                " submitted as a job, therefore you need to specify a billing account.",
+            },
+        ),
+        (
             "temp_directory",
             {
                 "type": str,
@@ -366,16 +362,6 @@ class FirecrestTransport(BlockingTransport):
                 "prompt": "FirecREST api version.",
                 "help": "The version of the FirecREST api deployed on the server",
                 "callback": _dynamic_info_firecrest_version,
-            },
-        ),
-        (
-            "billing_account",
-            {
-                "type": str,
-                "non_interactive_default": False,
-                "prompt": "Billing account for time consuming operations",
-                "help": "According to the FirecREST documentation, operations longer than 5 seconds have to be"
-                " submitted as a job, therefore you need to specify a billing account.",
             },
         ),
         (
