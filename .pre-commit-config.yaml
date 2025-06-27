@@ -45,4 +45,4 @@ repos:
       - "types-PyYAML"
       - "types-requests"
       - "pyfirecrest>=3.2.2"
-      - "aiida-core@git+https://github.com/aiidateam/aiida-core.git@2d8dd7a"
+      - "aiida-core>=2.7.0"
