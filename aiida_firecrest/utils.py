@@ -87,7 +87,7 @@ def disable_fc_logging() -> Iterator[None]:
 
 @contextmanager
 def convert_header_exceptions(
-    convert: None | dict[str, Callable[[Self], Exception] | None] = None
+    convert: None | dict[str, Callable[[Self], Exception] | None] = None,
 ) -> Iterator[None]:
     """Catch HeaderException and re-raise as an alternative."""
     converters: dict[str, Callable[[Self], Exception] | None] = {
