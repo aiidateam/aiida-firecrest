@@ -8,7 +8,7 @@
 ################################################################################
 """Pytest configuration that must be at the root level."""
 
-pytest_plugins = ["aiida.manage.tests.pytest_fixtures"]
+pytest_plugins = ["aiida.tools.pytest_fixtures"]
 
 
 def pytest_addoption(parser):
