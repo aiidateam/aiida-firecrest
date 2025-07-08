@@ -13,8 +13,8 @@ from pathlib import Path
 from aiida import common, engine, manage, orm
 from aiida.common.folders import Folder
 from aiida.engine.processes.calcjobs.tasks import MAX_ATTEMPTS_OPTION
-from aiida.manage.tests.pytest_fixtures import EntryPointManager
 from aiida.parsers import Parser
+from aiida.tools.pytest_fixtures.entry_points import EntryPointManager
 import pytest
 
 from aiida_firecrest.utils import FcPath
