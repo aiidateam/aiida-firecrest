@@ -64,6 +64,7 @@ def firecrest_computer(firecrest_config):
         temp_directory=firecrest_config.temp_directory,
         api_version=firecrest_config.api_version,
         billing_account=firecrest_config.billing_account,
+        max_io_allowed=firecrest_config.max_io_allowed,
     )
     return computer
 
@@ -444,6 +445,7 @@ class ComputerFirecrestConfig:
     builder_metadata_options_custom_scheduler_commands: list[str] = field(
         default_factory=list
     )
+    max_io_allowed: int = 8
     mocked: bool = False
 
 
@@ -585,6 +587,7 @@ def firecrest_config(
             temp_directory=str(_temp_directory),
             api_version="2",
             billing_account="billing_account",
+            max_io_allowed=8,
             builder_metadata_options_custom_scheduler_commands=[],
             mocked=True,
             username="test_user",

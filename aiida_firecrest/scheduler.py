@@ -39,7 +39,6 @@ class FirecrestScheduler(Scheduler):
         "can_query_by_user": False,
     }
     _logger = Scheduler._logger.getChild("firecrest")
-    _DEFAULT_PAGE_SIZE = 25
 
     def _get_submit_script_header(self, job_tmpl: JobTemplate) -> str:
         """
@@ -199,7 +198,7 @@ class FirecrestScheduler(Scheduler):
         transport = self.transport
         with convert_header_exceptions():
             try:
-                result = transport._client.submit(
+                result = transport.blocking_client.submit(
                     system_name=transport._machine,
                     working_dir=working_directory,
                     script_remote_path=str(
@@ -225,7 +224,7 @@ class FirecrestScheduler(Scheduler):
                 try:
                     with convert_header_exceptions():
                         # Note: pyfirecrest expects the job id as an integer
-                        results += transport._client.job_info(
+                        results += transport.blocking_client.job_info(
                             transport._machine, str(job)
                         )
                 except FirecrestException as exc:
@@ -403,7 +402,7 @@ class FirecrestScheduler(Scheduler):
     def kill_job(self, jobid: str) -> bool:
         transport = self.transport
         with convert_header_exceptions():
-            transport._client.cancel_job(transport._machine, jobid)
+            transport.blocking_client.cancel_job(transport._machine, jobid)
         return True
 
     def _convert_time(self, string: str) -> int | None:

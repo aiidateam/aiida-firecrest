@@ -77,6 +77,7 @@ def test_validate_temp_directory(
         "compute_resource": f"{firecrest_config.compute_resource}",
         "small_file_size_mb": float(5),
         "api_version": f"{firecrest_config.api_version}",
+        "max_io_allowed": f"{firecrest_config.max_io_allowed}",
     }
 
     # prepare some files and directories for testing
@@ -129,6 +130,7 @@ def test_dynamic_info_direct_size(firecrest_config, monkeypatch, tmpdir: Path):
         "temp_directory": f"{firecrest_config.temp_directory}",
         "api_version": f"{firecrest_config.api_version}",
         "billing_account": f"{firecrest_config.billing_account}",
+        "max_io_allowed": f"{firecrest_config.max_io_allowed}",
     }
 
     # should catch UTILITIES_MAX_FILE_SIZE if value is not provided
@@ -155,6 +157,7 @@ def test_dynamic_info_firecrest_version(
         "temp_directory": f"{firecrest_config.temp_directory}",
         "api_version": f"{firecrest_config.api_version}",
         "billing_account": f"{firecrest_config.billing_account}",
+        "max_io_allowed": f"{firecrest_config.max_io_allowed}",
     }
 
     # should catch FIRECREST_VERSION if value is not provided
@@ -186,7 +189,7 @@ def test_dynamic_info_firecrest_version(
     # in case it could not get the version from the server, should abort
     class MockFirecrest:
         def __init__(self, *args, **kwargs):
-            self._client = Mock(server_version=lambda: None)
+            self.blocking_client = Mock(server_version=lambda: None)
 
     monkeypatch.setattr(_trans, "FirecrestTransport", MockFirecrest)
 
