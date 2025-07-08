@@ -10,24 +10,32 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncGenerator
 import fnmatch
 import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import posixpath
 import stat
+import sys
 import tarfile
 from typing import Any, Callable, ClassVar, TypedDict
 import uuid
 
 from aiida.cmdline.params.options.interactive import InteractiveOption
 from aiida.cmdline.params.options.overridable import OverridableOption
-from aiida.transports.transport import BlockingTransport, has_magic
+from aiida.transports.transport import (
+    AsyncTransport,
+    Transport,
+    has_magic,
+    validate_positive_number,
+)
 from aiida.transports.util import FileAttribute
 from click.core import Context
 from click.types import ParamType
 from firecrest import ClientCredentialsAuth  # type: ignore[attr-defined]
-from firecrest.v2 import Firecrest  # type: ignore[attr-defined]
+from firecrest.v2 import AsyncFirecrest, Firecrest  # type: ignore[attr-defined]
 from packaging.version import Version, parse
 
 from aiida_firecrest.utils import FcPath, TPath_Extended, convert_header_exceptions
@@ -99,22 +107,23 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
         small_file_size_mb=1.0,  # small_file_size_mb is irrelevant here
         api_version="100.0.0",  # version is irrelevant here
         billing_account="irrelevant",  # billing_account is irrelevant here
+        max_io_allowed=8,  # max_io_allowed is irrelevant here
     )
 
     # Temp directory routine
-    if transport.isfile(transport._temp_directory):
+    if transport.isfile(transport._temp_directory):  # type: ignore[no-untyped-call]
         raise click.BadParameter("Temp directory cannot be a file")
 
-    if transport.path_exists(transport._temp_directory):
-        if transport.listdir(transport._temp_directory):
+    if transport.path_exists(transport._temp_directory):  # type: ignore[no-untyped-call]
+        if transport.listdir(transport._temp_directory):  # type: ignore[no-untyped-call]
             # if not configured:
             confirm = click.confirm(
                 f"Temp directory {transport._temp_directory} is not empty. Do you want to flush it?"
             )
             if confirm:
-                for item in transport.listdir(transport._temp_directory):
+                for item in transport.listdir(transport._temp_directory):  # type: ignore[no-untyped-call]
                     # TODO: maybe do recursive delete
-                    transport.remove(transport._temp_directory.joinpath(item))
+                    transport.remove(transport._temp_directory.joinpath(item))  # type: ignore[no-untyped-call]
             else:
                 click.echo("Please provide an empty temp directory on the server.")
                 raise click.BadParameter(
@@ -123,7 +132,7 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
 
     else:
         try:
-            transport.mkdir(transport._temp_directory, ignore_existing=True)
+            transport.mkdir(transport._temp_directory, ignore_existing=True)  # type: ignore[no-untyped-call]
         except Exception as e:
             raise click.BadParameter(
                 f"Could not create temp directory {transport._temp_directory} on server: {e}"
@@ -181,12 +190,13 @@ def _dynamic_info_firecrest_version(
         client_secret=secret,
         compute_resource=compute_resource,
         temp_directory=temp_directory,
-        small_file_size_mb=0.0,
+        small_file_size_mb=1.0,
         billing_account=billing_account,
         api_version="100.0.0",  # version is irrelevant here
+        max_io_allowed=8,  # max_io_allowed is irrelevant here
     )
 
-    _version = transport._client.server_version()
+    _version = transport.blocking_client.server_version()
     if not _version:
         click.echo("Could not get the version of the FirecREST server")
         raise click.Abort()
@@ -271,7 +281,7 @@ def _dynamic_info_direct_size(
     return small_file_size_mb
 
 
-class FirecrestTransport(BlockingTransport):
+class FirecrestTransport(AsyncTransport):
     """Transport interface for FirecREST.
     It must be used together with the 'firecrest' scheduler plugin."""
 
@@ -285,6 +295,7 @@ class FirecrestTransport(BlockingTransport):
     # TODO upstream issue
     _common_auth_options: ClassVar[list[Any]] = []  # type: ignore[misc]
     _DEFAULT_SAFE_OPEN_INTERVAL = 0.0
+    _DEFAULT_max_io_allowed = 8
 
     _valid_auth_options: ClassVar[list[tuple[str, ValidAuthOption]]] = [  # type: ignore[misc]
         (
@@ -375,6 +386,18 @@ class FirecrestTransport(BlockingTransport):
                 "callback": _dynamic_info_direct_size,
             },
         ),
+        (
+            "max_io_allowed",
+            {
+                "type": int,
+                "default": _DEFAULT_max_io_allowed,
+                "prompt": "Maximum number of concurrent I/O operations",
+                "help": "Depends on various factors, such as your network bandwidth, the server load, etc."
+                " (An experimental number)",
+                "non_interactive_default": True,
+                "callback": validate_positive_number,
+            },
+        ),
     ]
 
     def __init__(
@@ -389,6 +412,7 @@ class FirecrestTransport(BlockingTransport):
         small_file_size_mb: float,
         api_version: str,
         billing_account: str,
+        max_io_allowed: int,
         # note, machine is provided by default,
         # for the hostname, but we don't use that
         # TODO ideally hostname would not be necessary on a computer
@@ -403,7 +427,11 @@ class FirecrestTransport(BlockingTransport):
         :param compute_resource: Compute resources, for example 'daint', 'eiger', etc.
         :param small_file_size_mb: Maximum file size for direct transfer (MB)
         :param temp_directory: A temp directory on server for creating temporary files (compression, extraction, etc.)
+        :param api_version: The version of the FirecREST api deployed on the server
+        :param billing_account: Billing account for time consuming operations
+        :param max_io_allowed: Maximum number of concurrent I/O operations.
         :param kwargs: Additional keyword arguments
+
         """
 
         # there is no overhead for "opening" a connection to a REST-API,
@@ -421,14 +449,17 @@ class FirecrestTransport(BlockingTransport):
         assert isinstance(
             small_file_size_mb, float
         ), "small_file_size_mb must be a float"
+        assert isinstance(billing_account, str), "billing_account must be a string"
+        assert isinstance(max_io_allowed, int), "max_io_allowed must be an integer"
 
         self._machine = compute_resource
         self._url = url
         self._token_uri = token_uri
-        self._client_id = client_id
+        self.async_client_id = client_id
         self._small_file_size_bytes = int(small_file_size_mb * 1024 * 1024)
 
         self._payoff_override: bool | None = None
+        self._concurrent_io: int = 0
 
         secret = (
             Path(client_secret).read_text().strip()
@@ -437,7 +468,11 @@ class FirecrestTransport(BlockingTransport):
         )
 
         try:
-            self._client = Firecrest(
+            self.async_client = AsyncFirecrest(
+                firecrest_url=self._url,
+                authorization=ClientCredentialsAuth(client_id, secret, token_uri),
+            )
+            self.blocking_client = Firecrest(
                 firecrest_url=self._url,
                 authorization=ClientCredentialsAuth(client_id, secret, token_uri),
             )
@@ -452,6 +487,7 @@ class FirecrestTransport(BlockingTransport):
             self._payoff_override = False
 
         self.billing_account = billing_account
+        self._max_io_allowed = max_io_allowed
 
         # this makes no sense for firecrest, but we need to set this to True
         # otherwise the aiida-core will complain that the transport is not open:
@@ -463,6 +499,18 @@ class FirecrestTransport(BlockingTransport):
     def __str__(self) -> str:
         """Return the name of the plugin."""
         return self.__class__.__name__
+
+    @property
+    def max_io_allowed(self) -> int:
+        return self._max_io_allowed
+
+    async def _lock(self, sleep_time: float = 0.5) -> None:
+        while self._concurrent_io >= self.max_io_allowed:
+            await asyncio.sleep(sleep_time)
+        self._concurrent_io += 1
+
+    async def _unlock(self) -> None:
+        self._concurrent_io -= 1
 
     @property
     def is_open(self) -> bool:
@@ -478,19 +526,19 @@ class FirecrestTransport(BlockingTransport):
             raise ValueError("payoff_override must be a boolean value")
         self._payoff_override = value
 
-    def open(self) -> None:
+    async def open_async(self) -> None:
         """Open the transport.
         This is a no-op for the REST-API, as there is no connection to open.
         """
         pass
 
-    def close(self) -> None:
+    async def close_async(self) -> None:
         """Close the transport.
         This is a no-op for the REST-API, as there is no connection to close.
         """
         pass
 
-    def chmod(self, path: TPath_Extended, mode: int) -> None:
+    async def chmod_async(self, path: TPath_Extended, mode: int) -> None:
         """Change the mode of a path to the numeric mode.
 
         Note, if the path points to a symlink,
@@ -506,12 +554,12 @@ class FirecrestTransport(BlockingTransport):
         with convert_header_exceptions(
             {"X-Invalid-Mode": lambda p: ValueError(f"invalid mode: {mode}")}
         ):
-            self._client.chmod(self._machine, path, str(mode))
+            await self.async_client.chmod(self._machine, path, str(mode))
 
-    def chown(self, path: TPath_Extended, uid: int, gid: int) -> None:
+    async def chown_async(self, path: TPath_Extended, uid: int, gid: int) -> None:
         raise NotImplementedError
 
-    def _stat(self, path: TPath_Extended) -> os.stat_result:
+    async def _stat(self, path: TPath_Extended) -> os.stat_result:
         """Return stat info for this path.
 
         If the path is a symbolic link,
@@ -520,7 +568,7 @@ class FirecrestTransport(BlockingTransport):
 
         path = str(path)
         with convert_header_exceptions():
-            stats = self._client.stat(self._machine, path, dereference=True)
+            stats = await self.async_client.stat(self._machine, path, dereference=True)
         return os.stat_result(
             (
                 stats["mode"],
@@ -536,7 +584,7 @@ class FirecrestTransport(BlockingTransport):
             )
         )
 
-    def _lstat(self, path: TPath_Extended) -> os.stat_result:
+    async def _lstat(self, path: TPath_Extended) -> os.stat_result:
         """
         Like stat(), except if the path points to a symlink, the symlink's
         status information is returned, rather than its target's.
@@ -544,7 +592,7 @@ class FirecrestTransport(BlockingTransport):
 
         path = str(path)
         with convert_header_exceptions():
-            stats = self._client.stat(self._machine, path, dereference=False)
+            stats = await self.async_client.stat(self._machine, path, dereference=False)
         return os.stat_result(
             (
                 stats["mode"],
@@ -560,21 +608,21 @@ class FirecrestTransport(BlockingTransport):
             )
         )
 
-    def path_exists(self, path: TPath_Extended) -> bool:
+    async def path_exists_async(self, path: TPath_Extended) -> bool:
         """Check if a path exists on the remote."""
 
         path = str(path)
         try:
-            self._stat(path)
+            await self._stat(path)
         except FileNotFoundError:
             return False
         return True
 
-    def get_attribute(self, path: TPath_Extended) -> FileAttribute:
+    async def get_attribute_async(self, path: TPath_Extended) -> FileAttribute:
         """Get the attributes of a file."""
 
         path = str(path)
-        result = self._stat(path)
+        result = await self._stat(path)
         return FileAttribute(  # type: ignore
             {
                 "st_size": result.st_size,
@@ -586,27 +634,27 @@ class FirecrestTransport(BlockingTransport):
             }
         )
 
-    def isdir(self, path: TPath_Extended) -> bool:
+    async def isdir_async(self, path: TPath_Extended) -> bool:
         """Check if a path is a directory."""
 
         path = str(path)
         try:
-            st_mode = self._stat(path).st_mode
+            st_mode = (await self._stat(path)).st_mode
         except FileNotFoundError:
             return False
         return stat.S_ISDIR(st_mode)
 
-    def isfile(self, path: TPath_Extended) -> bool:
+    async def isfile_async(self, path: TPath_Extended) -> bool:
         """Check if a path is a file."""
 
         path = str(path)
         try:
-            st_mode = self._stat(path).st_mode
+            st_mode = (await self._stat(path)).st_mode
         except FileNotFoundError:
             return False
         return stat.S_ISREG(st_mode)
 
-    def listdir(  # type: ignore[override]
+    async def listdir_async(
         self,
         path: TPath_Extended,
         pattern: str | None = None,
@@ -625,12 +673,12 @@ class FirecrestTransport(BlockingTransport):
         """
 
         path = str(path)
-        if not recursive and self.isdir(path) and not path.endswith("/"):
+        if not recursive and (await self.isdir_async(path)) and not path.endswith("/"):
             # This is just to match the behavior of ls
             path += "/"
 
         with convert_header_exceptions():
-            results = self._client.list_files(
+            results = await self.async_client.list_files(
                 self._machine, path, show_hidden=hidden, recursive=recursive
             )
         # names are relative to path
@@ -642,11 +690,13 @@ class FirecrestTransport(BlockingTransport):
 
     # TODO the default implementations of glob / iglob could be overridden
 
-    def makedirs(self, path: TPath_Extended, ignore_existing: bool = False) -> None:
+    async def makedirs_async(
+        self, path: TPath_Extended, ignore_existing: bool = False
+    ) -> None:
         """Make directories on the remote."""
 
         path = str(path)
-        exists = self.path_exists(path)
+        exists = await self.path_exists_async(path)
         if not ignore_existing and exists:
             # Note: FirecREST does not raise an error if the directory already exists, and parent is True.
             # which makes sense, but following the Superclass, we should raise an OSError in that case.
@@ -658,9 +708,11 @@ class FirecrestTransport(BlockingTransport):
 
         # firecrest does not support `exist_ok`, it's somehow blended into `parents`
         # see: https://github.com/eth-cscs/firecrest/issues/202
-        self.mkdir(path, ignore_existing=True)
+        await self.mkdir_async(path, ignore_existing=True)
 
-    def mkdir(self, path: TPath_Extended, ignore_existing: bool = False) -> None:
+    async def mkdir_async(
+        self, path: TPath_Extended, ignore_existing: bool = False
+    ) -> None:
         """Make a directory on the remote."""
 
         path = str(path)
@@ -669,21 +721,23 @@ class FirecrestTransport(BlockingTransport):
                 # Note see: https://github.com/eth-cscs/firecrest/issues/172
                 # Also see: https://github.com/eth-cscs/firecrest/issues/202
                 # firecrest does not support `exist_ok`, it's somehow blended into `parents`
-                self._client.mkdir(self._machine, path, create_parents=ignore_existing)
+                await self.async_client.mkdir(
+                    self._machine, path, create_parents=ignore_existing
+                )
 
         except FileExistsError as err:
             if not ignore_existing:
                 raise OSError(f"'{path}' already exists") from err
             raise
 
-    def normalize(self, path: TPath_Extended) -> str:  # type: ignore[override]
+    async def normalize_async(self, path: TPath_Extended) -> str:
         """Normalize a path on the remote."""
 
         # TODO: this might be buggy
         path = str(path)
         return posixpath.normpath(path)
 
-    def symlink(
+    async def symlink_async(
         self, remotesource: TPath_Extended, remotedestination: TPath_Extended
     ) -> None:
         """Create a symbolic link between the remote source and the remote
@@ -702,9 +756,9 @@ class FirecrestTransport(BlockingTransport):
         if not PurePosixPath(source_path).is_absolute():
             raise ValueError("target(remotesource) must be an absolute path")
         with convert_header_exceptions():
-            self._client.symlink(self._machine, source_path, link_path)
+            await self.async_client.symlink(self._machine, source_path, link_path)
 
-    def copyfile(
+    async def copyfile_async(
         self,
         remotesource: TPath_Extended,
         remotedestination: TPath_Extended,
@@ -718,18 +772,20 @@ class FirecrestTransport(BlockingTransport):
         source = str(remotesource)
         destination = str(remotedestination)
 
-        if not self.path_exists(source):
+        if not (await self.path_exists_async(source)):
             raise FileNotFoundError(f"Source file does not exist: {source}")
-        if not self.isfile(source):
+        if not (await self.isfile_async(source)):
             raise ValueError(f"Source is not a file: {source}")
-        if not self.path_exists(destination) and not self.isfile(source):
+        if not (await self.path_exists_async(destination)) and not (
+            await self.isfile_async(source)
+        ):
             raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
-        self._copy_to(source, destination, dereference)
+        await self._copy_to(source, destination, dereference)
         # I removed symlink copy, becasue it's really not a file copy, it's a link copy
         # and aiida-ssh have it in buggy manner, prrobably it's not used anyways
 
-    def _copy_to(
+    async def _copy_to(
         self, source: TPath_Extended, target: TPath_Extended, dereference: bool
     ) -> None:
         """Copy source path to the target path. Both paths must be on remote.
@@ -743,7 +799,7 @@ class FirecrestTransport(BlockingTransport):
             # Note although this endpoint states that it is only for directories,
             # it actually uses `cp -r`:
             # https://github.com/eth-cscs/firecrest/blob/7f02d11b224e4faee7f4a3b35211acb9c1cc2c6a/src/utilities/utilities.py#L320
-            self._client.cp(
+            await self.async_client.cp(
                 system_name=self._machine,
                 source_path=source,
                 target_path=target,
@@ -752,7 +808,7 @@ class FirecrestTransport(BlockingTransport):
                 blocking=True,
             )
 
-    def copytree(
+    async def copytree_async(
         self,
         remotesource: TPath_Extended,
         remotedestination: TPath_Extended,
@@ -767,16 +823,16 @@ class FirecrestTransport(BlockingTransport):
         source = remotesource
         destination = remotedestination
 
-        if not self.path_exists(source):
+        if not (await self.path_exists_async(source)):
             raise FileNotFoundError(f"Source file does not exist: {source}")
-        if not self.isdir(source):
+        if not (await self.isdir_async(source)):
             raise ValueError(f"Source is not a directory: {source}")
-        if not self.path_exists(destination):
+        if not (await self.path_exists_async(destination)):
             raise FileNotFoundError(f"Destination file does not exist: {destination}")
 
-        self._copy_to(source, destination, dereference)
+        await self._copy_to(source, destination, dereference)
 
-    def copy(
+    async def copy_async(
         self,
         remotesource: TPath_Extended,
         remotedestination: TPath_Extended,
@@ -801,10 +857,12 @@ class FirecrestTransport(BlockingTransport):
             raise NotImplementedError("Non-recursive copy not implemented")
 
         if has_magic(str(remotesource)):
-            for item in self.iglob(remotesource):  # type: ignore
+            async for item in self.iglob_async(remotesource):
                 # item is of str type, so we need to split it to get the file name
-                filename = item.split("/")[-1] if self.isfile(item) else ""
-                self.copy(
+                filename = (
+                    item.split("/")[-1] if (await self.isfile_async(item)) else ""
+                )
+                await self.copy_async(
                     item,
                     remotedestination + filename,
                     dereference=dereference,
@@ -812,17 +870,19 @@ class FirecrestTransport(BlockingTransport):
                 )
             return
 
-        if not self.path_exists(remotesource):
+        if not (await self.path_exists_async(remotesource)):
             raise FileNotFoundError(f"Source does not exist: {remotesource}")
-        if not self.path_exists(remotedestination) and not self.isfile(remotesource):
+        if not (await self.path_exists_async(remotedestination)) and not (
+            await self.isfile_async(remotesource)
+        ):
             raise FileNotFoundError(f"Destination does not exist: {remotedestination}")
 
-        self._copy_to(remotesource, remotedestination, dereference)
+        await self._copy_to(remotesource, remotedestination, dereference)
 
     # TODO do get/put methods need to handle glob patterns?
     # Apparently not, but I'm not clear how glob() iglob() are going to behave here. We may need to implement them.
 
-    def getfile(
+    async def getfile_async(
         self,
         remotepath: TPath_Extended,
         localpath: TPath_Extended,
@@ -847,12 +907,12 @@ class FirecrestTransport(BlockingTransport):
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
 
-        if not self.isfile(remotepath):
+        if not (await self.isfile_async(remotepath)):
             raise FileNotFoundError(f"Source file does not exist: {remotepath}")
         # if not local.exists():
         #     local.mkdir(parents=True)
         with convert_header_exceptions():
-            self._client.download(
+            await self.async_client.download(
                 self._machine,
                 str(remotepath),
                 str(local),
@@ -861,9 +921,9 @@ class FirecrestTransport(BlockingTransport):
             )
 
         if self.checksum_check:
-            self._validate_checksum(local, remotepath)
+            await self._validate_checksum(local, remotepath)
 
-    def _validate_checksum(
+    async def _validate_checksum(
         self, localpath: TPath_Extended, remotepath: TPath_Extended
     ) -> None:
         """Validate the checksum of a file.
@@ -878,7 +938,7 @@ class FirecrestTransport(BlockingTransport):
         if not local.is_absolute():
             raise ValueError("Destination must be an absolute path")
 
-        if not self.isfile(remotepath):
+        if not (await self.isfile_async(remotepath)):
             raise FileNotFoundError(
                 f"Cannot calculate checksum for a directory: {remotepath}"
             )
@@ -891,7 +951,7 @@ class FirecrestTransport(BlockingTransport):
 
         # https://github.com/eth-cscs/pyfirecrest/issues/159
         # checksum's return type has changed in v2 from str to dict. This might be a mistake
-        remote_hash = str(self._client.checksum(self._machine, remotepath))
+        remote_hash = str(await self.async_client.checksum(self._machine, remotepath))
 
         try:
             assert local_hash == remote_hash
@@ -900,7 +960,7 @@ class FirecrestTransport(BlockingTransport):
                 f"Checksum mismatch between local and remote files: {local} and {remotepath}"
             ) from e
 
-    def _gettreetar(
+    async def _gettreetar(
         self,
         remotepath: TPath_Extended,
         localpath: TPath_Extended,
@@ -923,15 +983,15 @@ class FirecrestTransport(BlockingTransport):
         remote_path_temp = self._temp_directory.joinpath(f"temp_{_}.gzip")
 
         # Compress
-        self._client.compress(
+        await self.async_client.compress(
             self._machine, remotepath, str(remote_path_temp), dereference=dereference
         )
         # Download
         localpath_temp = Path(localpath).joinpath(f"temp_{_}.gzip")
         try:
-            self.getfile(remote_path_temp, localpath_temp)
+            await self.getfile_async(remote_path_temp, localpath_temp)
         finally:
-            self.remove(remote_path_temp)
+            await self.remove_async(remote_path_temp)
 
         # Extract the downloaded file locally
         try:
@@ -944,7 +1004,7 @@ class FirecrestTransport(BlockingTransport):
         finally:
             localpath_temp.unlink()
 
-    def gettree(
+    async def gettree_async(
         self,
         remotepath: TPath_Extended,
         localpath: TPath_Extended,
@@ -966,7 +1026,7 @@ class FirecrestTransport(BlockingTransport):
         if local.is_file():
             raise OSError("Cannot copy a directory into a file")
 
-        if not self.isdir(remotepath):
+        if not (await self.isdir_async(remotepath)):
             raise OSError(f"Source is not a directory: {remotepath}")
 
         # this block is added only to mimick the behavior that aiida expects
@@ -978,45 +1038,47 @@ class FirecrestTransport(BlockingTransport):
             # Destination directory does not exist, create and move content abc inside it
             local.mkdir(parents=True, exist_ok=False)
 
-        if self.payoff(remotepath):
+        if await self.payoff(remotepath):
             # in this case send a request to the server to tar the files and then download the tar file
             # unfortunately, the server does not provide a deferenced tar option, yet.
-            self._gettreetar(remotepath, local, dereference=dereference)
+            await self._gettreetar(remotepath, local, dereference=dereference)
         else:
             # otherwise download the files one by one
-            for remote_item in self.listdir(remotepath, recursive=True):
+            for remote_item in await self.listdir_async(remotepath, recursive=True):
                 # remote_item is a relative path,
                 remote_item_abs = remotepath.joinpath(remote_item).resolve()
                 local_item = local.joinpath(remote_item)
-                if dereference and self.is_symlink(remote_item_abs):
-                    target_path = self._get_target(remote_item_abs)
+                if dereference and (await self.is_symlink_async(remote_item_abs)):
+                    target_path = await self._get_target(remote_item_abs)
                     if not Path(target_path).is_absolute():
                         target_path = remote_item_abs.parent.joinpath(
                             target_path
                         ).resolve()
 
-                    if self.isdir(target_path):
-                        self.gettree(target_path, local_item, dereference=True)
+                    if await self.isdir_async(target_path):
+                        await self.gettree_async(
+                            target_path, local_item, dereference=True
+                        )
                 else:
                     target_path = remote_item_abs
 
-                if not self.isdir(target_path):
-                    self.getfile(target_path, local_item)
+                if not (await self.isdir_async(target_path)):
+                    await self.getfile_async(target_path, local_item)
                 else:
                     local_item.mkdir(parents=True, exist_ok=True)
 
-    def _get_target(self, path: TPath_Extended) -> FcPath:
+    async def _get_target(self, path: TPath_Extended) -> FcPath:
         """gets the target of a symlink.
         Note: path must be a symlink, we don't check that, here."""
 
         path = str(path)
-        # results = self._client.list_files(self._machine, path,
+        # results = self.async_client.list_files(self._machine, path,
         #                                   show_hidden=True,
         #                                   recursive=False,
         #                                   dereference=False)
         # dereference=False is not supported in firecrest v1,
         # so we have to do a workaround
-        results = self._client.list_files(
+        results = await self.async_client.list_files(
             self._machine, str(Path(path).parent), show_hidden=True, recursive=False
         )
         # filter results to get the symlink with the given path
@@ -1031,17 +1093,21 @@ class FirecrestTransport(BlockingTransport):
 
         return FcPath(results[0]["linkTarget"])
 
-    def is_symlink(self, path: TPath_Extended) -> bool:
+    # Not part of the aiida-core::Transport interface, but very useful.
+    async def is_symlink_async(self, path: TPath_Extended) -> bool:
         """Whether path is a symbolic link."""
 
         path = str(path)
         try:
-            st_mode = self._lstat(path).st_mode
+            st_mode = (await self._lstat(path)).st_mode
         except FileNotFoundError:
             return False
         return stat.S_ISLNK(st_mode)
 
-    def get(
+    def is_symlink(self, *args: Any, **kwargs: Any) -> bool:
+        return self.run_command_blocking(self.is_symlink_async, *args, **kwargs)  # type: ignore
+
+    async def get_async(
         self,
         remotepath: TPath_Extended,
         localpath: TPath_Extended,
@@ -1060,15 +1126,17 @@ class FirecrestTransport(BlockingTransport):
         remotepath = FcPath(remotepath)
         localpath = str(localpath)
 
-        if self.isdir(remotepath):
-            self.gettree(remotepath, localpath)
-        elif self.isfile(remotepath):
-            self.getfile(remotepath, localpath)
+        if await self.isdir_async(remotepath):
+            await self.gettree_async(remotepath, localpath)
+        elif await self.isfile_async(remotepath):
+            await self.getfile_async(remotepath, localpath)
         elif has_magic(str(remotepath)):
-            for item in self.iglob(str(remotepath)):  # type: ignore
+            async for item in self.iglob_async(remotepath):
                 # item is of str type, so we need to split it to get the file name
-                filename = item.split("/")[-1] if self.isfile(item) else ""
-                self.get(
+                filename = (
+                    item.split("/")[-1] if (await self.isfile_async(item)) else ""
+                )
+                await self.get_async(
                     item,
                     localpath + filename,
                     dereference=dereference,
@@ -1078,7 +1146,7 @@ class FirecrestTransport(BlockingTransport):
         elif not ignore_nonexisting:
             raise FileNotFoundError(f"Source file does not exist: {remotepath}")
 
-    def putfile(
+    async def putfile_async(
         self,
         localpath: TPath_Extended,
         remotepath: TPath_Extended,
@@ -1108,12 +1176,12 @@ class FirecrestTransport(BlockingTransport):
                 raise FileNotFoundError(f"Local file does not exist: {localpath}")
             raise ValueError(f"Input localpath is not a file {localpath}")
 
-        if self.isdir(remotepath):
+        if await self.isdir_async(remotepath):
             raise ValueError(f"Destination is a directory: {remotepath}")
 
         # note this allows overwriting of existing files
         with convert_header_exceptions():
-            self._client.upload(
+            await self.async_client.upload(
                 self._machine,
                 str(localpath),
                 str(remotepath.parent),
@@ -1123,9 +1191,9 @@ class FirecrestTransport(BlockingTransport):
             )
 
         if self.checksum_check:
-            self._validate_checksum(localpath, str(remotepath))
+            await self._validate_checksum(localpath, str(remotepath))
 
-    def payoff(self, path: TPath_Extended) -> bool:
+    async def payoff(self, path: TPath_Extended) -> bool:
         """
         This function will be used to determine whether to tar the files before downloading
         """
@@ -1144,9 +1212,9 @@ class FirecrestTransport(BlockingTransport):
         if Path(path).exists():
             return len(os.listdir(path)) > 3
 
-        return len(self.listdir(path, recursive=True)) > 3
+        return len(await self.listdir_async(path, recursive=True)) > 3
 
-    def _puttreetar(
+    async def _puttreetar(
         self,
         localpath: TPath_Extended,
         remotepath: TPath_Extended,
@@ -1178,17 +1246,19 @@ class FirecrestTransport(BlockingTransport):
                     gzip.add(full_path, arcname=relative_path)
         # Upload
         try:
-            self.putfile(tarpath, remote_path_temp)
+            await self.putfile_async(tarpath, remote_path_temp)
         finally:
             tarpath.unlink()
 
         # Attempt extract
         try:
-            self._client.extract(self._machine, str(remote_path_temp), remotepath)
+            await self.async_client.extract(
+                self._machine, str(remote_path_temp), remotepath
+            )
         finally:
-            self.remove(remote_path_temp)
+            await self.remove_async(remote_path_temp)
 
-    def puttree(
+    async def puttree_async(
         self,
         localpath: TPath_Extended,
         remotepath: TPath_Extended,
@@ -1216,31 +1286,31 @@ class FirecrestTransport(BlockingTransport):
             raise ValueError(f"Input localpath is not a directory: {localpath}")
 
         # this block is added only to mimick the behavior that aiida expects
-        if self.path_exists(remote):
+        if await self.path_exists_async(remote):
             # Destination directory already exists, create local directory name inside it
             remote = remote.joinpath(localpath.name)
-            self.mkdir(remote, ignore_existing=False)
+            await self.mkdir_async(remote, ignore_existing=False)
         else:
             # Destination directory does not exist, create and move content abc inside it
-            self.mkdir(remote, ignore_existing=False)
+            await self.mkdir_async(remote, ignore_existing=False)
 
-        if self.payoff(localpath):
+        if await self.payoff(localpath):
             # in this case send send everything as a tar file
-            self._puttreetar(localpath, remote)
+            await self._puttreetar(localpath, remote)
         else:
             # otherwise send the files one by one
             for dirpath, _, filenames in os.walk(localpath, followlinks=dereference):
                 rel_folder = os.path.relpath(path=dirpath, start=localpath)
 
                 rm_parent_now = remote.joinpath(rel_folder)
-                self.mkdir(rm_parent_now, ignore_existing=True)
+                await self.mkdir_async(rm_parent_now, ignore_existing=True)
 
                 for filename in filenames:
                     localfile_path = os.path.join(localpath, rel_folder, filename)
                     remotefile_path = rm_parent_now.joinpath(filename)
-                    self.putfile(localfile_path, remotefile_path)
+                    await self.putfile_async(localfile_path, remotefile_path)
 
-    def put(
+    async def put_async(
         self,
         localpath: TPath_Extended,
         remotepath: TPath_Extended,
@@ -1268,10 +1338,12 @@ class FirecrestTransport(BlockingTransport):
             raise ValueError("The localpath must be an absolute path")
 
         if has_magic(str(localpath)):
-            for item in self.iglob(str(localpath)):  # type: ignore
+            async for item in self.iglob_async(localpath):
                 # item is of str type, so we need to split it to get the file name
-                filename = item.split("/")[-1] if self.isfile(item) else ""
-                self.put(
+                filename = (
+                    item.split("/")[-1] if (await self.isfile_async(item)) else ""
+                )
+                await self.put_async(
                     item,
                     remotepath + filename,
                     dereference=dereference,
@@ -1283,35 +1355,37 @@ class FirecrestTransport(BlockingTransport):
             raise FileNotFoundError(f"Source file does not exist: {localpath}")
 
         if local.is_dir():
-            self.puttree(localpath, remotepath)
+            await self.puttree_async(localpath, remotepath)
         elif local.is_file():
-            self.putfile(localpath, remotepath)
+            await self.putfile_async(localpath, remotepath)
 
-    def remove(self, path: TPath_Extended) -> None:
+    async def remove_async(self, path: TPath_Extended) -> None:
         """Remove a file or directory on the remote."""
         # note firecrest uses `rm -f`,
 
         path = str(path)
 
-        if self.isfile(path):
+        if await self.isfile_async(path):
             with convert_header_exceptions():
-                self._client.rm(
+                await self.async_client.rm(
                     self._machine, path, account=self.billing_account, blocking=True
                 )
-        elif not self.path_exists(path):
+        elif not (await self.path_exists_async(path)):
             # if the path does not exist, we do not raise an error
             return
         else:
             raise OSError(f"Path is not a file: {path}")
 
-    def rename(self, oldpath: TPath_Extended, newpath: TPath_Extended) -> None:
+    async def rename_async(
+        self, oldpath: TPath_Extended, newpath: TPath_Extended
+    ) -> None:
         """Rename a file or directory on the remote."""
 
         oldpath = str(oldpath)
         newpath = str(newpath)
 
         with convert_header_exceptions():
-            self._client.mv(
+            await self.async_client.mv(
                 self._machine,
                 oldpath,
                 newpath,
@@ -1319,21 +1393,21 @@ class FirecrestTransport(BlockingTransport):
                 blocking=True,
             )
 
-    def rmdir(self, path: TPath_Extended) -> None:
+    async def rmdir_async(self, path: TPath_Extended) -> None:
         """Remove a directory on the remote.
         If the directory is not empty, an OSError is raised."""
 
         path = str(path)
 
-        if len(self.listdir(path)) == 0:
+        if len(await self.listdir_async(path)) == 0:
             with convert_header_exceptions():
-                self._client.rm(
+                await self.async_client.rm(
                     self._machine, path, account=self.billing_account, blocking=True
                 )
         else:
             raise OSError(f"Directory not empty: {path}")
 
-    def rmtree(self, path: TPath_Extended) -> None:
+    async def rmtree_async(self, path: TPath_Extended) -> None:
         """Remove a directory on the remote.
         If the directory is not empty, it will be removed recursively, equivalent to `rm -rf`.
         It does not raise an error if the directory does not exist.
@@ -1342,25 +1416,29 @@ class FirecrestTransport(BlockingTransport):
 
         path = str(path)
 
-        if self.isdir(path):
+        if await self.isdir_async(path):
             with convert_header_exceptions():
-                self._client.rm(
+                await self.async_client.rm(
                     self._machine, path, account=self.billing_account, blocking=True
                 )
-        elif not self.path_exists(path):
+        elif not (await self.path_exists_async(path)):
             # if the path does not exist, we do not raise an error
             return
         else:
             raise OSError(f"Path is not a directory: {path}")
 
-    def whoami(self) -> str:
+    async def whoami_async(self) -> str:
         """Return the username of the current user.
         return None if the username cannot be determined.
         """
         # whoami is not supported in v2:
         # https://github.com/eth-cscs/pyfirecrest/issues/160
-        # return self._client.whoami(machine=self._machine)
-        return str(self._client.userinfo(system_name=self._machine)["user"]["name"])
+        # return self.async_client.whoami(machine=self._machine)
+        return str(
+            (await self.async_client.userinfo(system_name=self._machine))["user"][
+                "name"
+            ]
+        )
 
     def gotocomputer_command(self, remotedir: TPath_Extended) -> str:
         """Not possible for REST-API.
@@ -1368,16 +1446,259 @@ class FirecrestTransport(BlockingTransport):
         # TODO remove from interface
         raise NotImplementedError("firecrest does not support gotocomputer_command")
 
-    def _exec_command_internal(self, command: str, **kwargs: Any) -> Any:  # type: ignore[override]
-        """Not possible for REST-API.
-        It's here only because it's an abstract method in the base class."""
-        # TODO remove from interface
-        raise NotImplementedError("firecrest does not support command execution")
-
-    def exec_command_wait_bytes(  # type: ignore[no-untyped-def]
-        self, command: str, stdin=None, workdir: TPath_Extended | None = None, **kwargs
+    async def exec_command_wait_async(  # type: ignore[no-untyped-def]
+        self,
+        command: str,
+        stdin=None,
+        encoding: str = "utf-8",
+        workdir: TPath_Extended | None = None,
+        **kwargs,
     ):
         """Not possible for REST-API.
         It's here only because it's an abstract method in the base class."""
         # TODO remove from interface
         raise NotImplementedError("firecrest does not support command execution")
+
+    ## This methods that could be put in AsyncTransport, abstract class
+    async def listdir_withattributes_async(
+        self, path: TPath_Extended, pattern: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Return a list of the names of the entries in the given path.
+        The list is in arbitrary order. It does not include the special
+        entries '.' and '..' even if they are present in the directory.
+
+        :param path: path to list (default to '.')
+            It must be an absolute path.
+        :param pattern: if used, listdir returns a list of files matching
+                            filters in Unix style. Unix only.
+        :type path:  :class:`Path <pathlib.Path>`, :class:`PurePosixPath <pathlib.PurePosixPath>`, or `str`
+        :type pattern: str
+        :return: a list of dictionaries, one per entry.
+            The schema of the dictionary is
+            the following::
+
+                {
+                   'name': String,
+                   'attributes': FileAttributeObject,
+                   'isdir': Bool
+                }
+
+            where 'name' is the file or folder directory, and any other information is metadata
+            (if the file is a folder, a directory, ...). 'attributes' behaves as the output of
+            transport.get_attribute(); isdir is a boolean indicating if the object is a directory or not.
+        """
+        path = str(path)
+        retlist = []
+        path_resolved = Path(path).resolve().as_posix()
+
+        for file_name in await self.listdir_async(path_resolved):
+            filepath = os.path.join(path_resolved, file_name)
+            attributes = await self.get_attribute_async(filepath)
+            retlist.append(
+                {
+                    "name": file_name,
+                    "attributes": attributes,
+                    "isdir": await self.isdir_async(filepath),
+                }
+            )
+        return retlist
+
+    ## This methods that could be put in AsyncTransport, abstract class
+    async def copy_from_remote_to_remote_async(
+        self,
+        transportdestination: Transport,
+        remotesource: TPath_Extended,
+        remotedestination: TPath_Extended,
+        **kwargs: Any,
+    ) -> None:
+        """Copy files or folders from a remote computer to another remote computer, asynchronously.
+
+        :param transportdestination: transport to be used for the destination computer
+        :param remotesource: path to the remote source directory / file
+        :param remotedestination: path to the remote destination directory / file
+        :param kwargs: keyword parameters passed to the call to transportdestination.put,
+            except for 'dereference' that is passed to self.get
+
+        :type transportdestination: :class:`Transport <aiida.transports.transport.Transport>`,
+        :type remotesource:  :class:`Path <pathlib.Path>`, :class:`PurePosixPath <pathlib.PurePosixPath>`, or `str`
+        :type remotedestination:  :class:`Path <pathlib.Path>`, :class:`PurePosixPath <pathlib.PurePosixPath>`, or `str`
+
+        .. note:: the keyword 'dereference' SHOULD be set to False for the
+         final put (onto the destination), while it can be set to the
+         value given in kwargs for the get from the source. In that
+         way, a symbolic link would never be followed in the final
+         copy to the remote destination. That way we could avoid getting
+         unknown (potentially malicious) files into the destination computer.
+         HOWEVER, since dereference=False is currently NOT
+         supported by all plugins, we still force it to True for the final put.
+
+        .. note:: the supported keys in kwargs are callback, dereference,
+           overwrite and ignore_nonexisting.
+        """
+        from aiida.common.folders import SandboxFolder
+
+        kwargs_get = {
+            "callback": None,
+            "dereference": kwargs.pop("dereference", True),
+            "overwrite": True,
+            "ignore_nonexisting": False,
+        }
+        kwargs_put = {
+            "callback": kwargs.pop("callback", None),
+            "dereference": True,
+            "overwrite": kwargs.pop("overwrite", True),
+            "ignore_nonexisting": kwargs.pop("ignore_nonexisting", False),
+        }
+
+        if kwargs:
+            self.logger.error("Unknown parameters passed to copy_from_remote_to_remote")
+
+        with SandboxFolder() as sandbox:
+            await self.get_async(remotesource, sandbox.abspath, **kwargs_get)  # type: ignore[arg-type]
+            # Then we scan the full sandbox directory with get_content_list,
+            # because copying directly from sandbox.abspath would not work
+            # to copy a single file into another single file, and copying
+            # from sandbox.get_abs_path('*') would not work for files
+            # beginning with a dot ('.').
+            for filename in sandbox.get_content_list():
+                await transportdestination.put_async(
+                    os.path.join(sandbox.abspath, filename),
+                    remotedestination,  # type: ignore[arg-type]
+                    **kwargs_put,
+                )
+
+    # async def glob_async(self, pathname: TPath_Extended):
+    #     """Return a list of paths matching a pathname pattern.
+
+    #     The pattern may contain simple shell-style wildcards a la fnmatch.
+
+    #     :param pathname: the pathname pattern to match. Only absolute paths are supported.
+
+    #     :return: a list of paths matching the pattern. Absolute paths are returned.
+    #     """
+    #     pathname = str(pathname)
+
+    #     basename= os.path.basename(pathname)
+    #     dirname = os.path.dirname(pathname)
+    #     if has_magic(dirname):
+    #         # If the directory part of the pathname has magic characters,
+    #         # we need to glob it first to find all matching directories.
+    #         dirs = [d for d in (await self.glob_async(dirname)) if (await self.isdir_async(d))]
+    #     else:
+    #         dirs = [dirname] if (await self.isdir_async(dirname)) else []
+
+    #     if has_magic(basename):
+    #         # If the basename has magic characters, we use glob1 to match
+    #         # against the pattern in each directory.
+    #         relative_items = []
+    #         for d in dirs:
+    #             relative_items.extend(await self.listdir_async(d, pattern=basename, recursive=False))
+    #     else:
+    #         # If the basename does not have magic characters, we use glob0
+    #         # to check if the file exists in each directory.
+    #         relative_items = []
+    #         for d in dirs:
+    #             if (await self.path_exists_async(os.path.join(d, basename))):
+    #                 relative_items.append(basename)
+
+    #     absolute_items = [
+    #         os.path.join(dirname, item) for item in relative_items
+    #     ]
+
+    #     return absolute_items
+
+    async def glob_async(self, pathname: TPath_Extended) -> list[str]:
+        """Return a list of paths matching a pathname pattern.
+
+        The pattern may contain simple shell-style wildcards a la fnmatch.
+
+        :param pathname: the pathname pattern to match. It should only be an absolute path.
+
+        :type pathname:  :class:`Path <pathlib.Path>`, :class:`PurePosixPath <pathlib.PurePosixPath>`, or `str`
+
+        :return: a list of paths matching the pattern.
+        """
+        pathname_str = str(pathname)
+        result = []
+        async for item in self.iglob_async(pathname_str):
+            result.append(item)
+        return result
+
+    async def iglob_async(self, pathname: TPath_Extended) -> AsyncGenerator[str]:
+        """Return an iterator which yields the paths matching a pathname pattern.
+
+        The pattern may contain simple shell-style wildcards a la fnmatch.
+
+        :param pathname: the pathname pattern to match.
+        """
+        pathname_str = str(pathname)
+
+        if not has_magic(pathname_str):
+            if await self.path_exists_async(pathname_str):
+                yield pathname_str
+            return
+        dirname, basename = os.path.split(pathname_str)
+
+        if has_magic(dirname):
+            dirs = [
+                d
+                async for d in self.iglob_async(dirname)
+                if (await self.isdir_async(d))
+            ]
+        else:
+            dirs = [dirname] if (await self.isdir_async(dirname)) else []
+
+        glob_in_dir = self.glob1 if has_magic(basename) else self.glob0
+        for dirname in dirs:
+            for name in await glob_in_dir(dirname, basename):
+                yield os.path.join(dirname, name)
+
+    # These 2 helper functions non-recursively glob inside a literal directory.
+    # They return a list of basenames. `glob1` accepts a pattern while `glob0`
+    # takes a literal basename (so it only has to check for its existence).
+
+    async def glob1(self, dirname: str, pattern: str) -> list[str]:
+        """Match subpaths of dirname against pattern.
+
+        :param dirname: path to the directory
+        :param pattern: pattern to match against
+        """
+
+        if isinstance(pattern, str) and not isinstance(dirname, str):
+            dirname = dirname.decode(
+                sys.getfilesystemencoding() or sys.getdefaultencoding()
+            )
+        try:
+            names = await self.listdir_async(dirname, recursive=False)
+        except OSError:
+            return []
+        if pattern[0] != ".":
+            names = [name for name in names if name[0] != "."]
+        return fnmatch.filter(names, pattern)
+
+    async def glob0(self, dirname: str, basename: str) -> list[str]:
+        """Wrap basename i a list if it is empty or if dirname/basename is an existing path, else return empty list.
+
+        :param dirname: path to the directory
+        :param basename: basename to match against
+        """
+        if basename == "":
+            # `os.path.split()` returns an empty basename for paths ending with a
+            # directory separator.  'q*x/' should match only directories.
+            # if os.path.isdir(dirname):
+            if await self.isdir_async(dirname):
+                return [basename]
+        elif await self.path_exists_async(os.path.join(dirname, basename)):
+            # if os.path.lexists(os.path.join(dirname, basename)):
+            return [basename]
+        return []
+
+    async def compress_async(self, *args: Any, **kwargs: Any) -> None:
+        raise NotImplementedError(
+            "Compressing files is not supported by firecrest transport, for now. "
+        )
+
+    async def extract_async(self, *args: Any, **kwargs: Any) -> None:
+        raise NotImplementedError(
+            "Extracting files is not supported by firecrest transport, for now. "
+        )

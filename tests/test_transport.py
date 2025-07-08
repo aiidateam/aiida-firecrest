@@ -317,21 +317,21 @@ def test_put(firecrest_computer: orm.Computer, tmpdir: Path):
     _local.mkdir()
 
     # check if the code is directing to putfile() or puttree() as expected
-    with patch.object(transport, "puttree", autospec=True) as mock_puttree:
+    with patch.object(transport, "puttree_async", autospec=True) as mock_puttree:
         transport.put(_local, _remote)
     mock_puttree.assert_called_once()
 
-    with patch.object(transport, "puttree", autospec=True) as mock_puttree:
+    with patch.object(transport, "puttree_async", autospec=True) as mock_puttree:
         os.symlink(_local, tmpdir / "dir_link")
         transport.put(tmpdir / "dir_link", _remote)
     mock_puttree.assert_called_once()
 
-    with patch.object(transport, "putfile", autospec=True) as mock_putfile:
+    with patch.object(transport, "putfile_async", autospec=True) as mock_putfile:
         Path(_local / "file1").write_text("file1")
         transport.put(_local / "file1", _remote / "file1")
     mock_putfile.assert_called_once()
 
-    with patch.object(transport, "putfile", autospec=True) as mock_putfile:
+    with patch.object(transport, "putfile_async", autospec=True) as mock_putfile:
         os.symlink(_local / "file1", _local / "file1_link")
         transport.put(_local / "file1_link", _remote / "file1_link")
     mock_putfile.assert_called_once()
@@ -365,22 +365,22 @@ def test_get(firecrest_computer: orm.Computer, tmpdir: Path):
     _local.mkdir()
 
     # check if the code is directing to getfile() or gettree() as expected
-    with patch.object(transport, "gettree", autospec=True) as mock_gettree:
+    with patch.object(transport, "gettree_async", autospec=True) as mock_gettree:
         transport.get(_remote, _local)
     mock_gettree.assert_called_once()
 
-    with patch.object(transport, "gettree", autospec=True) as mock_gettree:
+    with patch.object(transport, "gettree_async", autospec=True) as mock_gettree:
         transport.symlink(_remote, tmpdir_remote / "dir_link")
         transport.get(tmpdir_remote / "dir_link", _local)
     mock_gettree.assert_called_once()
 
-    with patch.object(transport, "getfile", autospec=True) as mock_getfile:
+    with patch.object(transport, "getfile_async", autospec=True) as mock_getfile:
         Path(_local / "file1").write_text("file1")
         transport.putfile(_local / "file1", _remote / "file1")
         transport.get(_remote / "file1", _local / "file1")
     mock_getfile.assert_called_once()
 
-    with patch.object(transport, "getfile", autospec=True) as mock_getfile:
+    with patch.object(transport, "getfile_async", autospec=True) as mock_getfile:
         transport.symlink(_remote / "file1", _remote / "file1_link")
         transport.get(_remote / "file1_link", _local / "file1_link")
     mock_getfile.assert_called_once()
@@ -397,7 +397,7 @@ def test_get(firecrest_computer: orm.Computer, tmpdir: Path):
         transport.get(_remote / "file1", Path(_local).relative_to(tmpdir))
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("payoff", [True, False])
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
@@ -564,7 +564,7 @@ def test_puttree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
     # End of ASSERT block
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("payoff", [True, False])
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_gettree(firecrest_computer: orm.Computer, tmpdir: Path, payoff: bool):
@@ -813,3 +813,63 @@ def test_copyfile(firecrest_computer: orm.Computer, tmpdir: Path):
     assert transport.is_symlink(_remote_2 / "file1_link")
     transport.getfile(_remote_2 / "file1_link", _for_download / "file1_link")
     assert Path(_for_download / "file1_link").read_text() == "file1"
+
+
+@pytest.mark.usefixtures("aiida_profile_clean")
+def test_glob(firecrest_computer, tmpdir):
+    """Test the glob method of the transport plugin.
+    This tests mainly the implementation, doesn't need to run on remote
+    """
+    transport = firecrest_computer.get_transport()
+
+    local = Path(tmpdir) / "local"
+    remote = Path(transport._temp_directory) / "remote"
+
+    for subpath in [
+        "i.txt",
+        "j.txt",
+        "folder1/a/b.txt",
+        "folder1/a/c.txt",
+        "folder1/a/c.in",
+        "folder1/c.txt",
+        "folder1/e/f/g.txt",
+        "folder2/x",
+        "folder2/y/z",
+    ]:
+        local.joinpath(subpath).parent.mkdir(parents=True, exist_ok=True)
+        local.joinpath(subpath).write_text("touch")
+
+    # Put the local files to the remote directory
+    transport.puttree(local, remote)
+
+    # Test globbing
+    glob_list = transport.glob(str(remote) + "/*.txt")
+    should_be = [str(remote.joinpath(item)) for item in ["i.txt", "j.txt"]]
+    assert sorted(should_be) == sorted(glob_list)
+
+    glob_list = transport.glob(str(remote) + "/folder1/*.txt")
+    should_be = [str(remote.joinpath(item)) for item in ["folder1/c.txt"]]
+    assert sorted(should_be) == sorted(glob_list)
+
+    glob_list = transport.glob(str(remote) + "/folder1/*/*.txt")
+    should_be = [
+        str(remote.joinpath(item)) for item in ["folder1/a/b.txt", "folder1/a/c.txt"]
+    ]
+    assert sorted(should_be) == sorted(glob_list)
+
+    glob_list = transport.glob(str(remote) + "/folder*/*")
+    should_be = [
+        str(remote.joinpath(item))
+        for item in [
+            "folder1/a",
+            "folder1/c.txt",
+            "folder2/x",
+            "folder2/y",
+            "folder1/e",
+        ]
+    ]
+    assert sorted(should_be) == sorted(glob_list)
+
+    glob_list = transport.glob(str(remote) + "/folder1/*/*/*.txt")
+    should_be = [str(remote.joinpath(item)) for item in ["folder1/e/f/g.txt"]]
+    assert sorted(should_be) == sorted(glob_list)

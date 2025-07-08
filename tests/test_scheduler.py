@@ -59,7 +59,7 @@ def test_submit_job(firecrest_computer: orm.Computer, firecrest_config, tmpdir: 
     assert isinstance(job_id, str)
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(20)
 @pytest.mark.usefixtures("aiida_profile_clean")
 def test_get_and_kill_jobs(
     firecrest_computer: orm.Computer, firecrest_config, tmpdir: Path
