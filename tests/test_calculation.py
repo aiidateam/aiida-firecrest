@@ -1,10 +1,11 @@
 """Test for running calculations on a FireCREST computer."""
+
 from pathlib import Path
 
 from aiida import common, engine, manage, orm
 from aiida.common.folders import Folder
 from aiida.engine.processes.calcjobs.tasks import MAX_ATTEMPTS_OPTION
-from aiida.manage.tests.pytest_fixtures import EntryPointManager
+from aiida.tools.pytest_fixtures import EntryPointManager
 from aiida.parsers import Parser
 import pytest
 
@@ -40,18 +41,14 @@ def test_calculation_basic(firecrest_computer: orm.Computer):
 
 
 @pytest.mark.usefixtures("aiida_profile_clean", "no_retries")
-def test_calculation_file_transfer(
-    firecrest_computer: orm.Computer, entry_points: EntryPointManager
-):
+def test_calculation_file_transfer(firecrest_computer: orm.Computer, entry_points: EntryPointManager):
     """Test a calculation, with multiple files copied/uploaded/retrieved."""
     # add temporary entry points
     entry_points.add(MultiFileCalcjob, "aiida.calculations:testing.multifile")
     entry_points.add(NoopParser, "aiida.parsers:testing.noop")
 
     # add a remote file which is used remote_copy_list
-    firecrest_computer.get_transport()._cwd.joinpath(
-        firecrest_computer.get_workdir(), "remote_copy.txt"
-    ).touch()
+    firecrest_computer.get_transport()._cwd.joinpath(firecrest_computer.get_workdir(), "remote_copy.txt").touch()
 
     # setup the calculation
     code = orm.InstalledCode(
@@ -98,9 +95,7 @@ class MultiFileCalcjob(engine.CalcJob):
             "num_machines": 1,
             "num_mpiprocs_per_machine": 1,
         }
-        spec.input(
-            "metadata.options.parser_name", valid_type=str, default="testing.noop"
-        )
+        spec.input("metadata.options.parser_name", valid_type=str, default="testing.noop")
         spec.exit_code(400, "ERROR", message="Calculation failed.")
 
     def prepare_for_submission(self, folder: Folder) -> common.CalcInfo:
