@@ -909,9 +909,9 @@ class FirecrestTransport(AsyncTransport):
 
         if not (await self.isfile_async(remotepath)):
             raise FileNotFoundError(f"Source file does not exist: {remotepath}")
-        # if not local.exists():
-        #     local.mkdir(parents=True)
+
         with convert_header_exceptions():
+            await self._lock()
             await self.async_client.download(
                 self._machine,
                 str(remotepath),
@@ -919,6 +919,7 @@ class FirecrestTransport(AsyncTransport):
                 account=self.billing_account,
                 blocking=True,
             )
+            await self._unlock()
 
         if self.checksum_check:
             await self._validate_checksum(local, remotepath)
@@ -1181,6 +1182,7 @@ class FirecrestTransport(AsyncTransport):
 
         # note this allows overwriting of existing files
         with convert_header_exceptions():
+            await self._lock()
             await self.async_client.upload(
                 self._machine,
                 str(localpath),
@@ -1189,6 +1191,7 @@ class FirecrestTransport(AsyncTransport):
                 account=self.billing_account,
                 blocking=True,
             )
+            await self._unlock()
 
         if self.checksum_check:
             await self._validate_checksum(localpath, str(remotepath))
@@ -1567,46 +1570,6 @@ class FirecrestTransport(AsyncTransport):
                     **kwargs_put,
                 )
 
-    # async def glob_async(self, pathname: TPath_Extended):
-    #     """Return a list of paths matching a pathname pattern.
-
-    #     The pattern may contain simple shell-style wildcards a la fnmatch.
-
-    #     :param pathname: the pathname pattern to match. Only absolute paths are supported.
-
-    #     :return: a list of paths matching the pattern. Absolute paths are returned.
-    #     """
-    #     pathname = str(pathname)
-
-    #     basename= os.path.basename(pathname)
-    #     dirname = os.path.dirname(pathname)
-    #     if has_magic(dirname):
-    #         # If the directory part of the pathname has magic characters,
-    #         # we need to glob it first to find all matching directories.
-    #         dirs = [d for d in (await self.glob_async(dirname)) if (await self.isdir_async(d))]
-    #     else:
-    #         dirs = [dirname] if (await self.isdir_async(dirname)) else []
-
-    #     if has_magic(basename):
-    #         # If the basename has magic characters, we use glob1 to match
-    #         # against the pattern in each directory.
-    #         relative_items = []
-    #         for d in dirs:
-    #             relative_items.extend(await self.listdir_async(d, pattern=basename, recursive=False))
-    #     else:
-    #         # If the basename does not have magic characters, we use glob0
-    #         # to check if the file exists in each directory.
-    #         relative_items = []
-    #         for d in dirs:
-    #             if (await self.path_exists_async(os.path.join(d, basename))):
-    #                 relative_items.append(basename)
-
-    #     absolute_items = [
-    #         os.path.join(dirname, item) for item in relative_items
-    #     ]
-
-    #     return absolute_items
-
     async def glob_async(self, pathname: TPath_Extended) -> list[str]:
         """Return a list of paths matching a pathname pattern.
 
@@ -1653,10 +1616,6 @@ class FirecrestTransport(AsyncTransport):
             for name in await glob_in_dir(dirname, basename):
                 yield os.path.join(dirname, name)
 
-    # These 2 helper functions non-recursively glob inside a literal directory.
-    # They return a list of basenames. `glob1` accepts a pattern while `glob0`
-    # takes a literal basename (so it only has to check for its existence).
-
     async def glob1(self, dirname: str, pattern: str) -> list[str]:
         """Match subpaths of dirname against pattern.
 
@@ -1685,11 +1644,9 @@ class FirecrestTransport(AsyncTransport):
         if basename == "":
             # `os.path.split()` returns an empty basename for paths ending with a
             # directory separator.  'q*x/' should match only directories.
-            # if os.path.isdir(dirname):
             if await self.isdir_async(dirname):
                 return [basename]
         elif await self.path_exists_async(os.path.join(dirname, basename)):
-            # if os.path.lexists(os.path.join(dirname, basename)):
             return [basename]
         return []
 
