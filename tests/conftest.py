@@ -65,6 +65,7 @@ def firecrest_computer(firecrest_config):
         api_version=firecrest_config.api_version,
         billing_account=firecrest_config.billing_account,
         max_io_allowed=firecrest_config.max_io_allowed,
+        checksum_check=firecrest_config.checksum_check,
     )
     return computer
 
@@ -429,7 +430,13 @@ class ComputerFirecrestConfig:
            ["#SBATCH --account=mr32",
             "#SBATCH --constraint=mc",
             "#SBATCH --mem=10K"].
-    :param small_file_size_mb: The maximum file size for direct upload & download."""
+    :param small_file_size_mb: The maximum file size for direct upload & download.
+    :param max_io_allowed: The maximum number of I/O operations allowed.
+    :param billing_account: The billing account to use for the computer.
+    :param username: The username to use for the computer.
+    :param mocked: If True, the configuration is mocked and no real connection is made.
+    :param checksum_check: If True, checksums are checked for file transfers.
+    """
 
     url: str
     token_uri: str
@@ -446,6 +453,7 @@ class ComputerFirecrestConfig:
         default_factory=list
     )
     max_io_allowed: int = 8
+    checksum_check: bool = True
     mocked: bool = False
 
 
@@ -591,4 +599,5 @@ def firecrest_config(
             builder_metadata_options_custom_scheduler_commands=[],
             mocked=True,
             username="test_user",
+            checksum_check=True,
         )
