@@ -108,6 +108,7 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
         api_version="100.0.0",  # version is irrelevant here
         billing_account="irrelevant",  # billing_account is irrelevant here
         max_io_allowed=8,  # max_io_allowed is irrelevant here
+        checksum_check=False,  # checksum_check is irrelevant here
     )
 
     # Temp directory routine
@@ -194,6 +195,7 @@ def _dynamic_info_firecrest_version(
         billing_account=billing_account,
         api_version="100.0.0",  # version is irrelevant here
         max_io_allowed=8,  # max_io_allowed is irrelevant here
+        checksum_check=False,  # checksum_check is irrelevant here
     )
 
     _version = transport.blocking_client.server_version()
@@ -398,6 +400,15 @@ class FirecrestTransport(AsyncTransport):
                 "callback": validate_positive_number,
             },
         ),
+        (
+            "checksum_check",
+            {
+                "type": bool,
+                "default": False,
+                "prompt": "Whether to validate checksum for each file transferred. Note: This can slow down the Transport plugin.",
+                "non_interactive_default": True,
+            },
+        ),
     ]
 
     def __init__(
@@ -413,9 +424,7 @@ class FirecrestTransport(AsyncTransport):
         api_version: str,
         billing_account: str,
         max_io_allowed: int,
-        # note, machine is provided by default,
-        # for the hostname, but we don't use that
-        # TODO ideally hostname would not be necessary on a computer
+        checksum_check: bool,
         **kwargs: Any,
     ):
         """Construct a FirecREST transport object.
@@ -488,13 +497,12 @@ class FirecrestTransport(AsyncTransport):
 
         self.billing_account = billing_account
         self._max_io_allowed = max_io_allowed
+        self.checksum_check = checksum_check
 
         # this makes no sense for firecrest, but we need to set this to True
         # otherwise the aiida-core will complain that the transport is not open:
         # aiida-core/src/aiida/orm/utils/remote:clean_remote()
         self._is_open = True
-
-        self.checksum_check = False
 
     def __str__(self) -> str:
         """Return the name of the plugin."""
@@ -922,26 +930,25 @@ class FirecrestTransport(AsyncTransport):
             await self._unlock()
 
         if self.checksum_check:
-            await self._validate_checksum(local, remotepath)
+            await self._validate_checksum_async(local, remotepath)
 
-    async def _validate_checksum(
+    async def _validate_checksum_async(
         self, localpath: TPath_Extended, remotepath: TPath_Extended
     ) -> None:
         """Validate the checksum of a file.
         Useful for checking if a file was transferred correctly.
         it uses sha256 hash to compare the checksum of the local and remote files.
 
-        Raises: ValueError: If the checksums do not match.
+        Raises: FileNotFoundError: If the remote file does not exist or is not a file.
+        Raises: ValueError: If the checksums do not match. Or when the remote algorithm is not supported.
         """
 
         local = Path(localpath)
         remotepath = str(remotepath)
-        if not local.is_absolute():
-            raise ValueError("Destination must be an absolute path")
 
         if not (await self.isfile_async(remotepath)):
             raise FileNotFoundError(
-                f"Cannot calculate checksum for a directory: {remotepath}"
+                f"Remote file does not exist or is not a file: {remotepath}"
             )
 
         sha256_hash = hashlib.sha256()
@@ -950,9 +957,17 @@ class FirecrestTransport(AsyncTransport):
                 sha256_hash.update(byte_block)
         local_hash = sha256_hash.hexdigest()
 
-        # https://github.com/eth-cscs/pyfirecrest/issues/159
-        # checksum's return type has changed in v2 from str to dict. This might be a mistake
-        remote_hash = str(await self.async_client.checksum(self._machine, remotepath))
+        results = await self.async_client.checksum(self._machine, remotepath)
+
+        remote_hash = str(results["checksum"])
+        remote_algorithm = str(results["algorithm"])
+
+        if remote_algorithm.lower() != "sha256":
+            raise ValueError(
+                f"Unsupported checksum algorithm on remote: {remote_algorithm}."
+                "Only sha256 is supported. Please open an issue on https://github.com/aiidateam/aiida-firecrest/issues"
+                "sharing this error message, to support other algorithms."
+            )
 
         try:
             assert local_hash == remote_hash
@@ -960,6 +975,11 @@ class FirecrestTransport(AsyncTransport):
             raise ValueError(
                 f"Checksum mismatch between local and remote files: {local} and {remotepath}"
             ) from e
+
+    def _validate_checksum(self, *args: Any, **kwargs: Any) -> None:
+        # This is a blocking wrapper for the async method _validate_checksum_async.
+        # Not part of the Transport interface, but used internally.
+        return self.run_command_blocking(self._validate_checksum_async, *args, **kwargs)  # type: ignore
 
     async def _gettreetar(
         self,
@@ -1194,7 +1214,7 @@ class FirecrestTransport(AsyncTransport):
             await self._unlock()
 
         if self.checksum_check:
-            await self._validate_checksum(localpath, str(remotepath))
+            await self._validate_checksum_async(localpath, remotepath)
 
     async def payoff(self, path: TPath_Extended) -> bool:
         """

@@ -165,7 +165,7 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
 
     # test the self.checksum_check
     with patch.object(
-        transport, "_validate_checksum", autospec=True
+        transport, "_validate_checksum_async", autospec=True
     ) as mock_validate_checksum:
         transport.checksum_check = True
         transport.putfile(_local / "file1", _remote / "file1_checksum")
@@ -175,7 +175,7 @@ def test_putfile_getfile(firecrest_computer: orm.Computer, tmpdir: Path):
     assert mock_validate_checksum.call_count == 2
 
     with patch.object(
-        transport, "_validate_checksum", autospec=True
+        transport, "_validate_checksum_async", autospec=True
     ) as mock_validate_checksum:
         transport.checksum_check = False
         transport.putfile(_local / "file1", _remote / "file1_checksum2")
@@ -873,3 +873,42 @@ def test_glob(firecrest_computer, tmpdir):
     glob_list = transport.glob(str(remote) + "/folder1/*/*/*.txt")
     should_be = [str(remote.joinpath(item)) for item in ["folder1/e/f/g.txt"]]
     assert sorted(should_be) == sorted(glob_list)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("aiida_profile_clean")
+async def test_checksum(firecrest_computer: orm.Computer, tmpdir: Path):
+    """
+    This test is to check `checksum` method.
+    Note: this test depends on functional putfile() and getfile() methods, for consistency with the real server tests.
+      Before running this test, make sure `test_putfile_getfile` has passed.
+    """
+    transport = firecrest_computer.get_transport()
+    tmpdir_remote = Path(transport._temp_directory)
+
+    _remote = tmpdir_remote / "remotedir"
+    _local = tmpdir / "localdir"
+    _local.mkdir()
+    transport.mkdir(_remote)
+
+    Path(_local / "A").write_text("A")
+    Path(_local / "B").write_text("B")
+    transport.putfile(_local / "A", _remote / "A")
+
+    # Should pass for correct checksum
+    transport._validate_checksum(_local / "A", _remote / "A")
+
+    # Should raise for wrong checksum
+    with pytest.raises(
+        ValueError,
+        match="Checksum mismatch between local and remote files:"
+        f" {_local / 'B'} and {_remote / 'A'}",
+    ):
+        transport._validate_checksum(_local / "B", _remote / "A")
+
+    # Should raise if remote file does not exist
+    with pytest.raises(
+        FileNotFoundError,
+        match=f"Remote file does not exist or is not a file: {_remote / 'does_not_exist'}",
+    ):
+        await transport._validate_checksum(_local / "A", _remote / "does_not_exist")

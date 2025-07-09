@@ -78,6 +78,7 @@ def test_validate_temp_directory(
         "small_file_size_mb": float(5),
         "api_version": f"{firecrest_config.api_version}",
         "max_io_allowed": f"{firecrest_config.max_io_allowed}",
+        "checksum_check": True,
     }
 
     # prepare some files and directories for testing
@@ -131,6 +132,7 @@ def test_dynamic_info_direct_size(firecrest_config, monkeypatch, tmpdir: Path):
         "api_version": f"{firecrest_config.api_version}",
         "billing_account": f"{firecrest_config.billing_account}",
         "max_io_allowed": f"{firecrest_config.max_io_allowed}",
+        "checksum_check": f"{firecrest_config.checksum_check}",
     }
 
     # should catch UTILITIES_MAX_FILE_SIZE if value is not provided
@@ -158,6 +160,7 @@ def test_dynamic_info_firecrest_version(
         "api_version": f"{firecrest_config.api_version}",
         "billing_account": f"{firecrest_config.billing_account}",
         "max_io_allowed": f"{firecrest_config.max_io_allowed}",
+        "checksum_check": f"{firecrest_config.checksum_check}",
     }
 
     # should catch FIRECREST_VERSION if value is not provided
