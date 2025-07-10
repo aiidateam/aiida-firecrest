@@ -36,11 +36,12 @@ from click.core import Context
 from click.types import ParamType
 from firecrest import ClientCredentialsAuth  # type: ignore[attr-defined]
 from firecrest.v2 import AsyncFirecrest, Firecrest  # type: ignore[attr-defined]
-from packaging.version import Version, parse
+from packaging.version import InvalidVersion, Version, parse
 
 from aiida_firecrest.utils import FcPath, TPath_Extended, convert_header_exceptions
 
 _MINIMUM_API_VERSION = "2.2.8"  # minimum supported version of FirecREST API
+_SMALL_FILE_SIZE_MB = 10.0
 
 
 class ValidAuthOption(TypedDict, total=False):
@@ -104,8 +105,6 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
         client_secret=secret,
         compute_resource=compute_resource,
         temp_directory=value,
-        small_file_size_mb=1.0,  # small_file_size_mb is irrelevant here
-        api_version="100.0.0",  # version is irrelevant here
         billing_account="irrelevant",  # billing_account is irrelevant here
         max_io_allowed=8,  # max_io_allowed is irrelevant here
         checksum_check=False,  # checksum_check is irrelevant here
@@ -143,77 +142,6 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
     )
 
     return value
-
-
-def _dynamic_info_firecrest_version(
-    ctx: Context, param: InteractiveOption, value: str
-) -> str:
-    """
-    Find the version of the FirecREST server.
-    This is a callback function for click, interface.
-    It's called during the parsing of the command line arguments, during `verdi computer configure` command.
-    If the user enters "None" as value, this function will connect to the server and get the version of the FirecREST server.
-    Otherwise, it will check if the version is supported.
-    """
-
-    import click
-    from packaging.version import InvalidVersion
-
-    if value != "None" and value != "0":
-        try:
-            parse(value)
-        except InvalidVersion as err:
-            # raise in case the version is not valid, e.g. latest, stable, etc.
-            raise click.BadParameter(f"Invalid input {value}") from err
-
-        if parse(value) < parse(_MINIMUM_API_VERSION):
-            raise click.BadParameter(
-                f"FirecREST api version {value} is not supported,"
-                " minimum supported version is {_MINIMUM_API_VERSION}"
-            )
-        # If version is provided by the user, and it's supported, we will just return it.
-        # No print confirmation is needed, to keep things less verbose.
-        return value
-
-    firecrest_url = ctx.params["url"]
-    token_uri = ctx.params["token_uri"]
-    client_id = ctx.params["client_id"]
-    compute_resource = ctx.params["compute_resource"]
-    secret = ctx.params["client_secret"]
-    temp_directory = ctx.params["temp_directory"]
-    billing_account = ctx.params["billing_account"]
-
-    transport = FirecrestTransport(
-        url=firecrest_url,
-        token_uri=token_uri,
-        client_id=client_id,
-        client_secret=secret,
-        compute_resource=compute_resource,
-        temp_directory=temp_directory,
-        small_file_size_mb=1.0,
-        billing_account=billing_account,
-        api_version="100.0.0",  # version is irrelevant here
-        max_io_allowed=8,  # max_io_allowed is irrelevant here
-        checksum_check=False,  # checksum_check is irrelevant here
-    )
-
-    _version = transport.blocking_client.server_version()
-    if not _version:
-        click.echo("Could not get the version of the FirecREST server")
-        raise click.Abort()
-
-    if parse(_version) < parse(_MINIMUM_API_VERSION):
-        click.echo(
-            f"FirecREST api version {value} is not supported,"
-            f" minimum supported version is {_MINIMUM_API_VERSION}"
-        )
-        raise click.Abort()
-
-    # for the sake of uniformity, we will print the version in style only if dynamically retrieved.
-    click.echo(
-        click.style("Fireport: ", bold=True, fg="magenta") + f"FirecRESTapi: {_version}"
-    )
-    return str(_version)
 
 
 def _dynamic_info_direct_size(
@@ -255,7 +183,6 @@ def _dynamic_info_direct_size(
     #     compute_resource=compute_resource,
     #     temp_directory=temp_directory,
     #     small_file_size_mb=0.0,
-    #     api_version="100.0.0",  # version is irrelevant here
     #     billing_account="irrelevant",  # billing_account is irrelevant here
     # )
 
@@ -286,14 +213,9 @@ class FirecrestTransport(AsyncTransport):
     """Transport interface for FirecREST.
     Must be used together with the 'firecrest' scheduler plugin."""
 
-    # override these options, because they don't really make sense for a REST-API,
-    # so we don't want the user having to provide them
+    # We override these options, because they don't really make sense for a REST-API,
     # - `use_login_shell` you can't run bash on a REST-API
     # - `safe_interval` there is no connection overhead for a REST-API
-    #   although ideally you would rate-limit the number of requests,
-    #   but this would ideally require some "global" rate limiter,
-    #   across all transport instances
-    # TODO upstream issue
     _common_auth_options: ClassVar[list[Any]] = []  # type: ignore[misc]
     _DEFAULT_SAFE_OPEN_INTERVAL = 0.0
     _DEFAULT_max_io_allowed = 8
@@ -366,28 +288,6 @@ class FirecrestTransport(AsyncTransport):
             },
         ),
         (
-            "api_version",
-            {
-                "type": str,
-                "default": "2.2.8",
-                "non_interactive_default": True,
-                "prompt": "FirecREST api version.",
-                "help": "The version of the FirecREST api deployed on the server",
-                "callback": _dynamic_info_firecrest_version,
-            },
-        ),
-        (
-            "small_file_size_mb",
-            {
-                "type": float,
-                "default": 0,
-                "non_interactive_default": True,
-                "prompt": "Maximum file size for direct transfer (MB) [Enter 0 to get this info from server]",
-                "help": "Below this size, file bytes will be sent in a single API call.",
-                "callback": _dynamic_info_direct_size,
-            },
-        ),
-        (
             "max_io_allowed",
             {
                 "type": int,
@@ -419,8 +319,6 @@ class FirecrestTransport(AsyncTransport):
         client_secret: str,
         compute_resource: str,
         temp_directory: str,
-        small_file_size_mb: float,
-        api_version: str,
         billing_account: str,
         max_io_allowed: int,
         checksum_check: bool,
@@ -433,9 +331,7 @@ class FirecrestTransport(AsyncTransport):
         :param client_id: FirecREST client ID
         :param client_secret: FirecREST client secret or str(Absolute path) to an existing FirecREST Secret Key
         :param compute_resource: Compute resources, for example 'daint', 'eiger', etc.
-        :param small_file_size_mb: Maximum file size for direct transfer (MB)
         :param temp_directory: A temp directory on server for creating temporary files (compression, extraction, etc.)
-        :param api_version: The version of the FirecREST api deployed on the server
         :param billing_account: Billing account for time consuming operations
         :param max_io_allowed: Maximum number of concurrent I/O operations.
         :param kwargs: Additional keyword arguments
@@ -453,18 +349,13 @@ class FirecrestTransport(AsyncTransport):
         assert isinstance(client_secret, str), "client_secret must be a string"
         assert isinstance(compute_resource, str), "compute_resource must be a string"
         assert isinstance(temp_directory, str), "temp_directory must be a string"
-        assert isinstance(api_version, str), "api_version must be a string"
-        assert isinstance(
-            small_file_size_mb, float
-        ), "small_file_size_mb must be a float"
         assert isinstance(billing_account, str), "billing_account must be a string"
         assert isinstance(max_io_allowed, int), "max_io_allowed must be an integer"
 
         self._machine = compute_resource
         self._url = url
         self._token_uri = token_uri
-        self.async_client_id = client_id
-        self._small_file_size_bytes = int(small_file_size_mb * 1024 * 1024)
+        self._small_file_size_bytes = int(_SMALL_FILE_SIZE_MB * 1024 * 1024)
 
         self._payoff_override: bool | None = None
         self._concurrent_io: int = 0
@@ -488,8 +379,7 @@ class FirecrestTransport(AsyncTransport):
             raise ValueError(f"Could not connect to FirecREST server: {e}") from e
 
         self._temp_directory = FcPath(temp_directory)
-
-        self._api_version: Version = parse(api_version)
+        self._api_version: Version = self._get_firecrest_version()
 
         if self._api_version < parse("1.16.0"):
             self._payoff_override = False
@@ -502,6 +392,39 @@ class FirecrestTransport(AsyncTransport):
         # otherwise the aiida-core will complain that the transport is not open:
         # aiida-core/src/aiida/orm/utils/remote:clean_remote()
         self._is_open = True
+
+    def _get_firecrest_version(self) -> Version:
+        """
+        Find the version of the FirecREST server.
+        Will connect to the server and get the version of the FirecREST server.
+
+        returns: version of the FirecREST server.
+
+        :raises ValueError: if the version is not supported
+        :raises RuntimeError: if the version could not be retrieved
+        """
+
+        try:
+            _version = self.blocking_client.server_version()
+        except Exception as e:
+            raise RuntimeError(
+                "Could not get the version of the FirecREST server"
+            ) from e
+
+        try:
+            parsed_version = parse(_version)  # type: ignore
+        except InvalidVersion as err:
+            raise ValueError(
+                f"Cannot parse the retrieved version from the server: {_version}"
+            ) from err
+
+        if parsed_version < parse(_MINIMUM_API_VERSION):
+            raise ValueError(
+                f"FirecREST api version {_version} is not supported,"
+                f" minimum supported version is {_MINIMUM_API_VERSION}"
+            )
+
+        return parsed_version
 
     def __str__(self) -> str:
         """Return the name of the plugin."""

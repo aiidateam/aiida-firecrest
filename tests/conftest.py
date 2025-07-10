@@ -42,9 +42,7 @@ def firecrest_computer(firecrest_config):
         client_id=firecrest_config.client_id,
         client_secret=firecrest_config.client_secret,
         compute_resource=firecrest_config.compute_resource,
-        small_file_size_mb=firecrest_config.small_file_size_mb,
         temp_directory=firecrest_config.temp_directory,
-        api_version=firecrest_config.api_version,
         billing_account=firecrest_config.billing_account,
         max_io_allowed=firecrest_config.max_io_allowed,
         checksum_check=firecrest_config.checksum_check,
@@ -63,13 +61,11 @@ class ComputerFirecrestConfig:
     :param compute_resource: The name of the compute resource. This is the name of the machine.
     :param temp_directory: A temporary directory on the machine for transient zip files.
     :param workdir: The aiida working directory on the machine.
-    :param api_version: The version of the FirecREST API.
     :param builder_metadata_options_custom_scheduler_commands: A list of custom
            scheduler commands when submitting a job, for example
            ["#SBATCH --account=mr32",
             "#SBATCH --constraint=mc",
             "#SBATCH --mem=10K"].
-    :param small_file_size_mb: The maximum file size for direct upload & download.
     :param max_io_allowed: The maximum number of I/O operations allowed.
     :param billing_account: The billing account to use for the computer.
     :param username: The username to use for the computer.
@@ -84,10 +80,8 @@ class ComputerFirecrestConfig:
     compute_resource: str
     temp_directory: str
     workdir: str
-    api_version: str
     billing_account: str
     username: str
-    small_file_size_mb: float = 1.0
     builder_metadata_options_custom_scheduler_commands: list[str] = field(
         default_factory=list
     )
