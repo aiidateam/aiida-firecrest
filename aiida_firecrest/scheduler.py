@@ -30,8 +30,7 @@ if TYPE_CHECKING:
 
 class FirecrestScheduler(Scheduler):
     """Scheduler interface for FirecREST.
-    It must be used together with the 'firecrest' transport plugin.
-    """
+    Must be used together with the 'firecrest' transport plugin."""
 
     transport: FirecrestTransport
     _job_resource_class = SlurmJobResource

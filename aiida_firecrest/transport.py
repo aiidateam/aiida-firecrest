@@ -285,7 +285,7 @@ def _dynamic_info_direct_size(
 
 class FirecrestTransport(AsyncTransport):
     """Transport interface for FirecREST.
-    It must be used together with the 'firecrest' scheduler plugin."""
+    Must be used together with the 'firecrest' scheduler plugin."""
 
     # override these options, because they don't really make sense for a REST-API,
     # so we don't want the user having to provide them
