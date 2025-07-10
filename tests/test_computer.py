@@ -200,3 +200,26 @@ def test_dynamic_info_firecrest_version(
         result = _trans._dynamic_info_firecrest_version(ctx, None, "None")
     capture = capsys.readouterr()
     assert "Could not get the version of the FirecREST server" in capture.out
+
+
+@pytest.mark.usefixtures("aiida_profile_clean")
+def test_verdi_computer_test(firecrest_computer: orm.Computer):
+    """
+    Test that all test pass with `verdi computer test` command.
+    Note: We probably could import /aiida/cmdline/commands/cmd_computer.py::computer_test and run that directly,
+    however that's not a good idea, because it's not part of the public api.
+    """
+
+    import subprocess
+
+    result = subprocess.run(
+        ["verdi", "computer", "test", "test_computer", "--print-traceback"],
+        capture_output=True,
+        text=True,
+    )
+
+    if "Success: all 6 tests succeeded" not in result.stdout:
+        raise AssertionError(
+            "verdi computer test test_computer did not pass all tests."
+            f"\nstdout:\n {result.stdout}\nstderr:\n {result.stderr}"
+        )
