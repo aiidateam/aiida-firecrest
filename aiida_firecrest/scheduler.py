@@ -236,7 +236,8 @@ class FirecrestScheduler(Scheduler):
                     # TODO: investigate this, if not needed, raise
                     pass
         else:
-            results = [[]]
+            results = []
+
         job_list = []
         for raw_result in results:
             # TODO: probably the if below is not needed, because recently
