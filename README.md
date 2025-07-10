@@ -109,7 +109,7 @@ You can also test against a real FirecREST server by supplying your own config f
 pytest --firecrest-config="MY_CONFIGURATION.json"
 ```
 
-Make sure the configuration is similar in structure to `.firecrest-demo-config.json`, and that you're aware of the version of FirecREST running on the server. Note that tests involving job submission may experience timeouts due to actual HPC queue wait times.
+Make sure the configuration is similarly structured as in `.firecrest-demo-config.json`. Note that tests involving job submission may experience timeouts due to actual HPC queue wait times.
 
 ```plaintext
 ┌─────────────────┐───►┌─────────────┐───►┌────────────────────────────────┐

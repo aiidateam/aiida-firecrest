@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 from aiida import orm
-from click import Abort, BadParameter
+from click import BadParameter
 import pytest
 
 import aiida_firecrest.transport as _trans
@@ -75,8 +75,6 @@ def test_validate_temp_directory(
         "client_id": f"{firecrest_config.client_id}",
         "client_secret": f"{firecrest_config.client_secret}",
         "compute_resource": f"{firecrest_config.compute_resource}",
-        "small_file_size_mb": float(5),
-        "api_version": f"{firecrest_config.api_version}",
         "max_io_allowed": f"{firecrest_config.max_io_allowed}",
         "checksum_check": True,
     }
@@ -131,7 +129,6 @@ def test_dynamic_info_direct_size(firecrest_config, monkeypatch, tmpdir: Path):
         "client_secret": f"{firecrest_config.client_secret}",
         "compute_resource": f"{firecrest_config.compute_resource}",
         "temp_directory": f"{firecrest_config.temp_directory}",
-        "api_version": f"{firecrest_config.api_version}",
         "billing_account": f"{firecrest_config.billing_account}",
         "max_io_allowed": f"{firecrest_config.max_io_allowed}",
         "checksum_check": f"{firecrest_config.checksum_check}",
@@ -147,61 +144,47 @@ def test_dynamic_info_direct_size(firecrest_config, monkeypatch, tmpdir: Path):
     assert result == 10
 
 
+@pytest.mark.usefixtures("aiida_profile_clean")
 def test_dynamic_info_firecrest_version(
-    firecrest_config, monkeypatch, tmpdir: Path, capsys
+    firecrest_computer: orm.Computer, monkeypatch, capsys
 ):
 
-    ctx = Mock()
-    ctx.params = {
-        "url": f"{firecrest_config.url}",
-        "token_uri": f"{firecrest_config.token_uri}",
-        "client_id": f"{firecrest_config.client_id}",
-        "client_secret": f"{firecrest_config.client_secret}",
-        "compute_resource": f"{firecrest_config.compute_resource}",
-        "temp_directory": f"{firecrest_config.temp_directory}",
-        "api_version": f"{firecrest_config.api_version}",
-        "billing_account": f"{firecrest_config.billing_account}",
-        "max_io_allowed": f"{firecrest_config.max_io_allowed}",
-        "checksum_check": f"{firecrest_config.checksum_check}",
-    }
+    from packaging.version import parse
 
-    # should catch FIRECREST_VERSION if value is not provided
-    result = _trans._dynamic_info_firecrest_version(ctx, None, "None")
-    assert isinstance(result, str)
+    transport = firecrest_computer.get_transport()
 
-    # should use the value if provided
-    result = _trans._dynamic_info_firecrest_version(ctx, None, "10.10.10")
-    assert result == "10.10.10"
+    # basic functionality test
+    monkeypatch.setattr(_trans, "_MINIMUM_API_VERSION", "1")
+    transport.blocking_client.server_version = lambda: "10.10.10"
+    assert transport._get_firecrest_version() == parse("10.10.10")
 
-    # raise BadParameter if the version is not supported
+    # raise RuntimeError if cannot get the version
+    def _mocked():
+        raise Exception
+
+    transport.blocking_client.server_version = _mocked
     with pytest.raises(
-        BadParameter, match=r".*FirecREST api version 0.0.0 is not supported.*"
+        RuntimeError, match="Could not get the version of the FirecREST server"
     ):
-        _trans._dynamic_info_firecrest_version(ctx, None, "0.0.0")
+        transport._get_firecrest_version()
 
-    # raise BadParameter if the input is nonsense, latest, stable, etc.
-    with pytest.raises(BadParameter, match=r".*Invalid input.*"):
-        _trans._dynamic_info_firecrest_version(ctx, None, "latest")
+    # raise ValueError if the version is invalid
+    transport.blocking_client.server_version = lambda: "invalid_version"
+    with pytest.raises(
+        ValueError,
+        match="Cannot parse the retrieved version from the server: invalid_version",
+    ):
+        transport._get_firecrest_version()
 
-    # in case the version recieved from the server is not supported, should abort
-    min_version = "100"
-    monkeypatch.setattr(_trans, "_MINIMUM_API_VERSION", min_version)
-    with pytest.raises(Abort):
-        result = _trans._dynamic_info_firecrest_version(ctx, None, "None")
-    capture = capsys.readouterr()
-    assert f"not supported, minimum supported version is {min_version}" in capture.out
-
-    # in case it could not get the version from the server, should abort
-    class MockFirecrest:
-        def __init__(self, *args, **kwargs):
-            self.blocking_client = Mock(server_version=lambda: None)
-
-    monkeypatch.setattr(_trans, "FirecrestTransport", MockFirecrest)
-
-    with pytest.raises(Abort):
-        result = _trans._dynamic_info_firecrest_version(ctx, None, "None")
-    capture = capsys.readouterr()
-    assert "Could not get the version of the FirecREST server" in capture.out
+    # raise ValueError if the version is too old
+    monkeypatch.setattr(_trans, "_MINIMUM_API_VERSION", "1.0")
+    transport.blocking_client.server_version = lambda: "0.9.9"
+    with pytest.raises(
+        ValueError,
+        match="FirecREST api version 0.9.9 is not supported,"
+        " minimum supported version is 1.0",
+    ):
+        transport._get_firecrest_version()
 
 
 @pytest.mark.usefixtures("aiida_profile_clean")
