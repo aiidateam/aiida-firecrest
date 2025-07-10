@@ -122,9 +122,8 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
                 f"Temp directory {transport._temp_directory} is not empty. Do you want to flush it?"
             )
             if confirm:
-                for item in transport.listdir(transport._temp_directory):  # type: ignore[no-untyped-call]
-                    # TODO: maybe do recursive delete
-                    transport.remove(transport._temp_directory.joinpath(item))  # type: ignore[no-untyped-call]
+                transport.rmtree(transport._temp_directory)  # type: ignore[no-untyped-call]
+                transport.mkdir(transport._temp_directory)  # type: ignore[no-untyped-call]
             else:
                 click.echo("Please provide an empty temp directory on the server.")
                 raise click.BadParameter(
@@ -1383,8 +1382,7 @@ class FirecrestTransport(AsyncTransport):
             await self.putfile_async(localpath, remotepath)
 
     async def remove_async(self, path: TPath_Extended) -> None:
-        """Remove a file or directory on the remote."""
-        # note firecrest uses `rm -f`,
+        """Remove the file at the given path. This only works on files."""
 
         path = str(path)
 
