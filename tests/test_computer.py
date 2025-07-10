@@ -89,6 +89,7 @@ def test_validate_temp_directory(
     transport.mkdir(_remote / "temp_on_server_directory")
     transport.putfile(tmpdir / "_.txt", _remote / "_.txt")
     transport.putfile(tmpdir / "_.txt", _remote / "temp_on_server_directory" / "_.txt")
+    transport.mkdir(_remote / "temp_on_server_directory/ subdir")
 
     # should raise if is_file
     with pytest.raises(BadParameter):
@@ -115,6 +116,7 @@ def test_validate_temp_directory(
     )
     assert result == Path(_remote / "temp_on_server_directory").as_posix()
     assert not transport.path_exists(_remote / "temp_on_server_directory" / "_.txt")
+    assert not transport.path_exists(_remote / "temp_on_server_directory" / "subdir")
 
 
 def test_dynamic_info_direct_size(firecrest_config, monkeypatch, tmpdir: Path):
