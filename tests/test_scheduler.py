@@ -106,13 +106,30 @@ def test_get_and_kill_jobs(
     for _ in range(5):
         joblist.append(scheduler.submit_job(firecrest_config.workdir, "job.sh"))
 
-    # test pagaination is working
-    scheduler._DEFAULT_PAGE_SIZE = 2
+    # very basic test
     result = scheduler.get_jobs(joblist)
     assert len(result) == 5
 
     for i in range(5):
         assert result[i].job_id in joblist
+        # TODO: one could check states as well
+
+    # very basic test, not specifying the joblist
+    result = scheduler.get_jobs()
+    assert len(result) >= 5
+
+    all_user_ids = [result[i].job_id for i in range(len(result))]
+    for i in range(5):
+        assert joblist[i] in all_user_ids
+        # TODO: one could check states as well
+
+    # very basic test, not specifying the joblist
+    result = scheduler.get_jobs([])
+    assert len(result) >= 5
+
+    all_user_ids = [result[i].job_id for i in range(len(result))]
+    for i in range(5):
+        assert joblist[i] in all_user_ids
         # TODO: one could check states as well
 
     # test kill jobs
