@@ -164,11 +164,20 @@ def test_dynamic_info_firecrest_version(
 
     transport.blocking_client.server_version = _mocked
     with pytest.raises(
-        RuntimeError, match="Could not get the version of the FirecREST server"
+        RuntimeError,
+        match="Could not get the version of the FirecREST server.\nPerhaps you have inserted wrong credentials?",
     ):
         transport._get_firecrest_version()
 
-    # raise ValueError if the version is invalid
+    # raise RuntimeError if the version is None
+    transport.blocking_client.server_version = lambda: None
+    with pytest.raises(
+        RuntimeError,
+        match="Could not get the version of the FirecREST server, it returned None.\nPerhaps you have inserted wrong credentials?",
+    ):
+        transport._get_firecrest_version()
+
+    # raise ValueError if the version is invalid or not parsable
     transport.blocking_client.server_version = lambda: "invalid_version"
     with pytest.raises(
         ValueError,
