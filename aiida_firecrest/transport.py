@@ -408,11 +408,16 @@ class FirecrestTransport(AsyncTransport):
             _version = self.blocking_client.server_version()
         except Exception as e:
             raise RuntimeError(
-                "Could not get the version of the FirecREST server"
+                "Could not get the version of the FirecREST server.\nPerhaps you have inserted wrong credentials?"
             ) from e
 
+        if _version is None:
+            raise RuntimeError(
+                "Could not get the version of the FirecREST server, it returned None.\nPerhaps you have inserted wrong credentials?"
+            )
+
         try:
-            parsed_version = parse(_version)  # type: ignore
+            parsed_version = parse(_version)
         except InvalidVersion as err:
             raise ValueError(
                 f"Cannot parse the retrieved version from the server: {_version}"
