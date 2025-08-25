@@ -1,6 +1,12 @@
 # Changelog
 
-## v0.2.0 - (not released yet)
+## v0.3.0 - (August 2025)
+- Major improvemnt in performance
+- Fully compatible with firecrest-v2
+- Comperhensive tests in place for the transport madule
+
+
+## v0.2.0 - (never released)
 
 ### Transport plugin
 - Refactor `put` & `get` & `copy` now they mimic behavior `aiida-ssh` transport plugin.
