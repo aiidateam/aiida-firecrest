@@ -225,6 +225,7 @@ class FirecrestScheduler(Scheduler):
         :return: a list of JobInfo objects, or a dictionary with job ids as keys and JobInfo objects as values.
         :raises SchedulerError: if there is an error retrieving the jobs from the scheduler.
         """
+        # import time; time.sleep(10)
         results = []  # type: ignore
         transport = self.transport
 
@@ -249,9 +250,16 @@ class FirecrestScheduler(Scheduler):
         # If the job is completed, while aiida expect a silent return
         if jobs:
             for job in jobs:
-                results += _send_request_and_handle_errors(str(job))
+                for _ in range(5):
+                    response = _send_request_and_handle_errors(str(job))
+                    if response:
+                        results += response
+                        break
         else:
-            results = _send_request_and_handle_errors()
+            for _ in range(5):
+                results = _send_request_and_handle_errors()
+                if results:
+                    break
             if not results:
                 return {} if as_dict else []
 
