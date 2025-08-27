@@ -1,9 +1,9 @@
 # Changelog
 
 ## v0.3.0 - (August 2025)
-- Major improvemnt in performance
+- Major improvement in performance
 - Fully compatible with firecrest-v2
-- Comperhensive tests in place for the transport madule
+- Comprehensive tests in place for the transport module
 
 
 ## v0.2.0 - (never released)
