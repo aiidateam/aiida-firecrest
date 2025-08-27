@@ -34,8 +34,8 @@ from aiida.transports.transport import (
 from aiida.transports.util import FileAttribute
 from click.core import Context
 from click.types import ParamType
-from firecrest import ClientCredentialsAuth  # type: ignore[attr-defined]
-from firecrest.v2 import AsyncFirecrest, Firecrest  # type: ignore[attr-defined]
+from firecrest import ClientCredentialsAuth
+from firecrest.v2 import AsyncFirecrest, Firecrest
 from packaging.version import InvalidVersion, Version, parse
 
 from aiida_firecrest.utils import FcPath, TPath_Extended, convert_header_exceptions
