@@ -240,7 +240,7 @@ class FirecrestScheduler(Scheduler):
         job_list = []
         for raw_result in results:
             job_state_raw = raw_result["status"]["state"]
-            # sometimes FirecREST returns extra comments after the state, for e.g: 'CANCELLED by 23570'
+            # sometimes FirecREST returns extra comments after the state, e.g., 'CANCELLED by 23570'
             job_state_cooked = job_state_raw.split()[0]
             job_owner = raw_result["user"]
 
@@ -447,9 +447,9 @@ class FirecrestScheduler(Scheduler):
             return datetime.datetime.fromtimestamp(epoch)
         except Exception as exc:
             self.logger.debug(
-                f"Unable to parse time string {epoch}, the message was {exc}"
+                f"Unable to parse epoch time {epoch}, the message was {exc}"
             )
-            raise ValueError("Problem parsing the time string.") from exc
+            raise ValueError("Problem parsing the epoch time.") from exc
 
 
 # see https://slurm.schedmd.com/squeue.html#lbAG
