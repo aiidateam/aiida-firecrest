@@ -8,10 +8,10 @@
 ################################################################################
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 import posixpath
-from typing import Any, Callable, Union
+from typing import Any, Union
 
 from aiida.schedulers import SchedulerError
 from aiida.transports.transport import TransportPath
@@ -20,7 +20,7 @@ from firecrest.v1.BasicClient import logger as fc_logger
 
 try:
     # available in python 3.11
-    from typing import Self  # type: ignore
+    from typing import Self
 except ImportError:
     from typing_extensions import Self
 
@@ -87,10 +87,10 @@ def disable_fc_logging() -> Iterator[None]:
 
 @contextmanager
 def convert_header_exceptions(
-    convert: None | dict[str, Callable[[Self], Exception] | None] = None
+    convert: None | dict[str, Callable[[dict[str, Any]], Exception] | None] = None,
 ) -> Iterator[None]:
     """Catch HeaderException and re-raise as an alternative."""
-    converters: dict[str, Callable[[Self], Exception] | None] = {
+    converters: dict[str, Callable[[dict[str, Any]], Exception] | None] = {
         **_COMMON_HEADER_EXC,
         **(convert or {}),
     }

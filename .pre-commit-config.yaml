@@ -18,7 +18,7 @@ repos:
     rev: v3.21.0
     hooks:
       - id: pyupgrade
-        args: [--py312-plus]
+        args: [--py39-plus]
 
   - repo: https://github.com/pycqa/isort
     rev: 7.0.0
@@ -43,5 +43,3 @@ repos:
         additional_dependencies:
           - "types-PyYAML"
           - "types-requests"
-          - "pyfirecrest>=3.2.2"
-          - "aiida-core>=2.7.0"
