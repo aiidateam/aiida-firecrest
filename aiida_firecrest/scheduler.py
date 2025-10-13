@@ -213,29 +213,46 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
         user: str | None = None,
         as_dict: bool = False,
     ) -> list[JobInfo] | dict[str, JobInfo]:
+        """
+        Retrieve the information of the jobs from the scheduler.
+        :param jobs: a list of job ids to retrieve. If None, all jobs of the user are retrieved.
+        :param user: the user to retrieve the jobs for. Note: this parameter is not used in Firecrest,
+            as it does not support querying by user. We just ignore it.
+            It's part of the Scheduler inerface, so we cannot remove it.
+        :param as_dict: if True, return a dictionary with job ids as keys and JobInfo objects as values.
+
+        :return: a list of JobInfo objects, or a dictionary with job ids as keys and JobInfo objects as values.
+        :raises SchedulerError: if there is an error retrieving the jobs from the scheduler.
+        """
         results = []
         transport = self.transport
+
+        def _send_request_and_handle_errors(
+            job_id: str | None = None,
+        ) -> list[Any]:
+            """Send a request to the Firecrest server and handle errors."""
+            try:
+                with convert_header_exceptions():
+                    return transport.blocking_client.job_info(  # type: ignore[no-any-return]
+                        transport._machine, job_id
+                    )
+            except FirecrestException as exc:
+                raise SchedulerError(
+                    f"Error retrieving job: {job_id} from the Firecrest server: {exc}"
+                ) from exc
+            except JobNotFoundError:
+                # If the job is not found, we just skip it
+                # this is to be consistent with aiida-firecrest-v1
+                return []
 
         # If the job is completed, while aiida expect a silent return
         if jobs:
             for job in jobs:
-                try:
-                    with convert_header_exceptions():
-                        # Note: pyfirecrest expects the job id as an integer
-                        results += transport.blocking_client.job_info(
-                            transport._machine, str(job)
-                        )
-                except FirecrestException as exc:
-                    raise SchedulerError(
-                        f"Error retrieving job {job} from the Firecrest server: {exc}"
-                    ) from exc
-                except JobNotFoundError:
-                    # If the job is not found, we just skip it
-                    # this is to be consistent with aiida-firecrest-v1
-                    # TODO: investigate this, if not needed, raise
-                    pass
+                results += _send_request_and_handle_errors(str(job))
         else:
-            results = []
+            results = _send_request_and_handle_errors()
+            if not results:
+                return {} if as_dict else []
 
         job_list = []
         for raw_result in results:
@@ -244,8 +261,6 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
             job_state_cooked = job_state_raw.split()[0]
             job_owner = raw_result["user"]
 
-            if user is not None and job_owner != user:
-                continue
             # if the job is completed or cancelled, we skip it
             if job_state_cooked in ["COMPLETED", "CANCELLED", "FAILED", "TIMEOUT"]:
                 self.logger.debug(
