@@ -224,16 +224,16 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
         :return: a list of JobInfo objects, or a dictionary with job ids as keys and JobInfo objects as values.
         :raises SchedulerError: if there is an error retrieving the jobs from the scheduler.
         """
-        results = []  # type: ignore
+        results = []
         transport = self.transport
 
         def _send_request_and_handle_errors(
             job_id: str | None = None,
-        ) -> list[str] | list[None]:
+        ) -> list[Any]:
             """Send a request to the Firecrest server and handle errors."""
             try:
                 with convert_header_exceptions():
-                    return transport.blocking_client.job_info(
+                    return transport.blocking_client.job_info(  # type: ignore[no-any-return]
                         transport._machine, job_id
                     )
             except FirecrestException as exc:
