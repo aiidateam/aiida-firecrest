@@ -65,7 +65,7 @@ jobs:
       run: pytest --ignore=firecrest-v2 --firecrest-config .firecrest-demo-config.json -vv --cov=aiida_firecrest --cov-report=xml --cov-report=term
 
     - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       with:
         name: aiida-firecrest-pytests
         flags: pytests
