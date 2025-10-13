@@ -1,48 +1,47 @@
 default_language_version:
-    python: python3.9
+    python: python3.12
 
 ci:
-    autoupdate_schedule: monthly
     autofix_prs: false
 
 repos:
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
-    - id: check-json
-    - id: check-yaml
-    - id: end-of-file-fixer
-    - id: trailing-whitespace
+      - id: check-json
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
 
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.17.0
+    rev: v3.21.0
     hooks:
-    - id: pyupgrade
-      args: [--py39-plus]
+      - id: pyupgrade
+        args: [--py312-plus]
 
   - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
+    rev: 7.0.0
     hooks:
-    - id: isort
+      - id: isort
 
   - repo: https://github.com/psf/black
-    rev: 24.8.0
+    rev: 25.9.0
     hooks:
-    - id: black
+      - id: black
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.3
+    rev: v0.14.0
     hooks:
-    - id: ruff
+      - id: ruff
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.11.2
+    rev: v1.18.2
     hooks:
-    - id: mypy
-      files: ^(aiida_firecrest/.*py)$
-      additional_dependencies:
-      - "types-PyYAML"
-      - "types-requests"
-      - "pyfirecrest>=3.2.2"
-      - "aiida-core>=2.7.0"
+      - id: mypy
+        files: ^(aiida_firecrest/.*py)$
+        additional_dependencies:
+          - "types-PyYAML"
+          - "types-requests"
+          - "pyfirecrest>=3.2.2"
+          - "aiida-core>=2.7.0"
