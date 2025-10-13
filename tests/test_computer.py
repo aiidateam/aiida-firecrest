@@ -165,7 +165,7 @@ def test_dynamic_info_firecrest_version(
     transport.blocking_client.server_version = _mocked
     with pytest.raises(
         RuntimeError,
-        match="Could not get the version of the FirecREST server.\nPerhaps you have inserted wrong credentials?",
+        match=r"Could not get the version of the FirecREST server.\nPerhaps you have inserted wrong credentials?",
     ):
         transport._get_firecrest_version()
 
@@ -173,7 +173,7 @@ def test_dynamic_info_firecrest_version(
     transport.blocking_client.server_version = lambda: None
     with pytest.raises(
         RuntimeError,
-        match="Could not get the version of the FirecREST server, it returned None.\nPerhaps you have inserted wrong credentials?",
+        match=r"Could not get the version of the FirecREST server, it returned None.\nPerhaps you have inserted wrong credentials?",
     ):
         transport._get_firecrest_version()
 
@@ -190,8 +190,8 @@ def test_dynamic_info_firecrest_version(
     transport.blocking_client.server_version = lambda: "0.9.9"
     with pytest.raises(
         ValueError,
-        match="FirecREST api version 0.9.9 is not supported,"
-        " minimum supported version is 1.0",
+        match=r"FirecREST api version 0.9.9 is not supported,"
+        r" minimum supported version is 1.0",
     ):
         transport._get_firecrest_version()
 

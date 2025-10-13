@@ -71,9 +71,14 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 strict = true
 
-# [[tool.mypy.overrides]]
-# module = 'aiida.*'
-# ignore_missing_imports = true
+[[tool.mypy.overrides]]
+module = [
+    "aiida",
+    "aiida.*",
+    "pyfirecrest",
+    "pyfirecrest.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 timeout = 25
