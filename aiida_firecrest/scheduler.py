@@ -13,7 +13,6 @@ from __future__ import annotations
 import datetime
 import re
 import string
-import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from aiida.engine.processes.exit_code import ExitCode
@@ -28,13 +27,13 @@ if TYPE_CHECKING:
     from aiida_firecrest.transport import FirecrestTransport
 
 
-class FirecrestScheduler(Scheduler):
+class FirecrestScheduler(Scheduler):  # type: ignore[misc]
     """Scheduler interface for FirecREST.
     Must be used together with the 'firecrest' transport plugin."""
 
     transport: FirecrestTransport
     _job_resource_class = SlurmJobResource
-    _features: ClassVar[dict[str, Any]] = {  # type: ignore[misc]
+    _features: ClassVar[dict[str, Any]] = {
         "can_query_by_user": False,
     }
     _logger = Scheduler._logger.getChild("firecrest")
@@ -225,17 +224,16 @@ class FirecrestScheduler(Scheduler):
         :return: a list of JobInfo objects, or a dictionary with job ids as keys and JobInfo objects as values.
         :raises SchedulerError: if there is an error retrieving the jobs from the scheduler.
         """
-        # import time; time.sleep(10)
-        results = []  # type: ignore
+        results = []
         transport = self.transport
 
         def _send_request_and_handle_errors(
             job_id: str | None = None,
-        ) -> list[str] | list[None]:
+        ) -> list[Any]:
             """Send a request to the Firecrest server and handle errors."""
             try:
                 with convert_header_exceptions():
-                    return transport.blocking_client.job_info(
+                    return transport.blocking_client.job_info(  # type: ignore[no-any-return]
                         transport._machine, job_id
                     )
             except FirecrestException as exc:
@@ -260,24 +258,25 @@ class FirecrestScheduler(Scheduler):
                 results = _send_request_and_handle_errors()
                 if results:
                     break
+            results = _send_request_and_handle_errors()
             if not results:
                 return {} if as_dict else []
 
         job_list = []
         for raw_result in results:
-            # TODO: probably the if below is not needed, because recently
-            # the server should return only the jobs of the current user
             job_state_raw = raw_result["status"]["state"]
+            # sometimes FirecREST returns extra comments after the state, e.g., 'CANCELLED by 23570'
+            job_state_cooked = job_state_raw.split()[0]
             job_owner = raw_result["user"]
 
             # if the job is completed or cancelled, we skip it
-            if job_state_raw in ["COMPLETED", "CANCELLED", "FAILED", "TIMEOUT"]:
+            if job_state_cooked in ["COMPLETED", "CANCELLED", "FAILED", "TIMEOUT"]:
                 self.logger.debug(
-                    f"Skipping from `func::get_job()`! job {raw_result['jobId']} with state {job_state_raw} "
+                    f"Skipping from `func::get_job()`! job {raw_result['jobId']} with state {job_state_cooked} "
                 )
                 continue
 
-            this_job = JobInfo()  # type: ignore
+            this_job = JobInfo()
 
             this_job.job_owner = job_owner
             this_job.job_id = str(raw_result["jobId"])
@@ -286,10 +285,10 @@ class FirecrestScheduler(Scheduler):
             this_job.annotation = ""
 
             try:
-                job_state_string = _MAP_STATUS_SLURM[job_state_raw]
+                job_state_string = _MAP_STATUS_SLURM[job_state_cooked]
             except KeyError:
                 self.logger.warning(
-                    f"Unrecognized job_state '{job_state_raw}' for job id {this_job.job_id}"
+                    f"Unrecognized job_state '{job_state_cooked}' for job id {this_job.job_id}"
                 )
                 job_state_string = JobState.UNDETERMINED
             # QUEUED_HELD states are not specific states in SLURM;
@@ -377,21 +376,28 @@ class FirecrestScheduler(Scheduler):
                         f"Couldn't parse time_used for job id {this_job.job_id}"
                     )
 
-            # dispatch_time is not returned explicitly by the FirecREST server
+            # submission_time is not returned explicitly by the FirecREST server
             # see: https://github.com/aiidateam/aiida-firecrest/issues/40
-            #     try:
-            #         this_job.dispatch_time = self._parse_time_string(thisjob_dict['dispatch_time'])
-            #     except ValueError:
-            #         self.logger.warning(f'Error parsing dispatch_time for job id {this_job.job_id}')
 
-            try:
-                this_job.submission_time = self._parse_time_string(
-                    raw_result["time"]["start"]
-                )
-            except ValueError:
-                self.logger.warning(
-                    f"Couldn't parse submission_time for job id {this_job.job_id}"
-                )
+            if raw_result["time"]["start"] != 0:
+                try:
+                    this_job.dispatch_time = self._parse_time_string(
+                        raw_result["time"]["start"]
+                    )
+                except ValueError:
+                    self.logger.warning(
+                        f"Couldn't parse dispatch_time for job id {this_job.job_id}"
+                    )
+
+            if raw_result["time"]["end"] != 0:
+                try:
+                    this_job.finish_time = self._parse_time_string(
+                        raw_result["time"]["end"]
+                    )
+                except ValueError:
+                    self.logger.warning(
+                        f"Couldn't parse finish_time for job id {this_job.job_id}"
+                    )
 
             this_job.title = raw_result["name"]
 
@@ -453,26 +459,20 @@ class FirecrestScheduler(Scheduler):
         return days * 86400 + hours * 3600 + mins * 60 + secs
 
     def _parse_time_string(
-        self, string: str, fmt: str = "%Y-%m-%dT%H:%M:%S"
+        self, epoch: int, fmt: str = "Unix time"
     ) -> datetime.datetime:
         """
-        Note: this function was copied from the Slurm scheduler plugin
-        Parse a time string in the format returned from qstat -f and
+        Parse an integer time in the epoch format (seconds since 1970-01-01 00:00:00 UTC)
         returns a datetime object.
         """
 
         try:
-            time_struct = time.strptime(string, fmt)
+            return datetime.datetime.fromtimestamp(epoch)
         except Exception as exc:
             self.logger.debug(
-                f"Unable to parse time string {string}, the message was {exc}"
+                f"Unable to parse epoch time {epoch}, the message was {exc}"
             )
-            raise ValueError("Problem parsing the time string.") from exc
-
-        # I convert from a time_struct to a datetime object going through
-        # the seconds since epoch, as suggested on stackoverflow:
-        # http://stackoverflow.com/questions/1697815
-        return datetime.datetime.fromtimestamp(time.mktime(time_struct))
+            raise ValueError("Problem parsing the epoch time.") from exc
 
 
 # see https://slurm.schedmd.com/squeue.html#lbAG

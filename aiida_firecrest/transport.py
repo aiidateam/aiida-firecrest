@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 import fnmatch
 import hashlib
 import os
@@ -20,7 +20,7 @@ import posixpath
 import stat
 import sys
 import tarfile
-from typing import Any, Callable, ClassVar, TypedDict
+from typing import Any, ClassVar, TypedDict
 import uuid
 
 from aiida.cmdline.params.options.interactive import InteractiveOption
@@ -34,8 +34,8 @@ from aiida.transports.transport import (
 from aiida.transports.util import FileAttribute
 from click.core import Context
 from click.types import ParamType
-from firecrest import ClientCredentialsAuth  # type: ignore[attr-defined]
-from firecrest.v2 import AsyncFirecrest, Firecrest  # type: ignore[attr-defined]
+from firecrest import ClientCredentialsAuth
+from firecrest.v2 import AsyncFirecrest, Firecrest
 from packaging.version import InvalidVersion, Version, parse
 
 from aiida_firecrest.utils import FcPath, TPath_Extended, convert_header_exceptions
@@ -111,18 +111,18 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
     )
 
     # Temp directory routine
-    if transport.isfile(transport._temp_directory):  # type: ignore[no-untyped-call]
+    if transport.isfile(transport._temp_directory):
         raise click.BadParameter("Temp directory cannot be a file")
 
-    if transport.path_exists(transport._temp_directory):  # type: ignore[no-untyped-call]
-        if transport.listdir(transport._temp_directory):  # type: ignore[no-untyped-call]
+    if transport.path_exists(transport._temp_directory):
+        if transport.listdir(transport._temp_directory):
             # if not configured:
             confirm = click.confirm(
                 f"Temp directory {transport._temp_directory} is not empty. Do you want to flush it?"
             )
             if confirm:
-                transport.rmtree(transport._temp_directory)  # type: ignore[no-untyped-call]
-                transport.mkdir(transport._temp_directory)  # type: ignore[no-untyped-call]
+                transport.rmtree(transport._temp_directory)
+                transport.mkdir(transport._temp_directory)
             else:
                 click.echo("Please provide an empty temp directory on the server.")
                 raise click.BadParameter(
@@ -131,7 +131,7 @@ def _validate_temp_directory(ctx: Context, param: InteractiveOption, value: str)
 
     else:
         try:
-            transport.mkdir(transport._temp_directory, ignore_existing=True)  # type: ignore[no-untyped-call]
+            transport.mkdir(transport._temp_directory, ignore_existing=True)
         except Exception as e:
             raise click.BadParameter(
                 f"Could not create temp directory {transport._temp_directory} on server: {e}"
@@ -209,18 +209,18 @@ def _dynamic_info_direct_size(
     return small_file_size_mb
 
 
-class FirecrestTransport(AsyncTransport):
+class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
     """Transport interface for FirecREST.
     Must be used together with the 'firecrest' scheduler plugin."""
 
     # We override these options, because they don't really make sense for a REST-API,
     # - `use_login_shell` you can't run bash on a REST-API
     # - `safe_interval` there is no connection overhead for a REST-API
-    _common_auth_options: ClassVar[list[Any]] = []  # type: ignore[misc]
+    _common_auth_options: ClassVar[list[Any]] = []
     _DEFAULT_SAFE_OPEN_INTERVAL = 0.0
     _DEFAULT_max_io_allowed = 8
 
-    _valid_auth_options: ClassVar[list[tuple[str, ValidAuthOption]]] = [  # type: ignore[misc]
+    _valid_auth_options: ClassVar[list[tuple[str, ValidAuthOption]]] = [
         (
             "url",
             {
@@ -341,7 +341,7 @@ class FirecrestTransport(AsyncTransport):
         # there is no overhead for "opening" a connection to a REST-API,
         # but still allow the user to set a safe interval if they really want to
         kwargs.setdefault("safe_interval", 0)
-        super().__init__(**kwargs)  # type: ignore
+        super().__init__(**kwargs)
 
         assert isinstance(url, str), "url must be a string"
         assert isinstance(token_uri, str), "token_uri must be a string"
@@ -558,7 +558,7 @@ class FirecrestTransport(AsyncTransport):
 
         path = str(path)
         result = await self._stat(path)
-        return FileAttribute(  # type: ignore
+        return FileAttribute(
             {
                 "st_size": result.st_size,
                 "st_uid": result.st_uid,
@@ -1503,7 +1503,7 @@ class FirecrestTransport(AsyncTransport):
             self.logger.error("Unknown parameters passed to copy_from_remote_to_remote")
 
         with SandboxFolder() as sandbox:
-            await self.get_async(remotesource, sandbox.abspath, **kwargs_get)  # type: ignore[arg-type]
+            await self.get_async(remotesource, sandbox.abspath, **kwargs_get)
             # Then we scan the full sandbox directory with get_content_list,
             # because copying directly from sandbox.abspath would not work
             # to copy a single file into another single file, and copying
@@ -1512,7 +1512,7 @@ class FirecrestTransport(AsyncTransport):
             for filename in sandbox.get_content_list():
                 await transportdestination.put_async(
                     os.path.join(sandbox.abspath, filename),
-                    remotedestination,  # type: ignore[arg-type]
+                    remotedestination,
                     **kwargs_put,
                 )
 
