@@ -476,6 +476,9 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
     async def chmod_async(self, path: TPath_Extended, mode: int) -> None:
         """Change the mode of a path to the numeric mode.
 
+        :param mode: New permissions as an integer, for example 0o700 (octal) or 448 (decimal) results in `-rwx------`
+            for a file.
+
         Note, if the path points to a symlink,
         the symlink target's permissions are changed.
         """
@@ -489,7 +492,8 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
         with convert_header_exceptions(
             {"X-Invalid-Mode": lambda p: ValueError(f"invalid mode: {mode}")}
         ):
-            await self.async_client.chmod(self._machine, path, str(mode))
+            # Firecrest expects mode as octal string without leading '0o'
+            await self.async_client.chmod(self._machine, path, f"{mode:o}")
 
     async def chown_async(self, path: TPath_Extended, uid: int, gid: int) -> None:
         raise NotImplementedError
