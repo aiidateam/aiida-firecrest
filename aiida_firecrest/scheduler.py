@@ -248,8 +248,20 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
         # If the job is completed, while aiida expect a silent return
         if jobs:
             for job in jobs:
-                results += _send_request_and_handle_errors(str(job))
+                # This loop is a way to battle a delay in firecrest
+                # when reading the recently submitted jobs from slurm.
+                # See some discussions in https://github.com/aiidateam/aiida-firecrest/issues/103
+                # This is the recommended way by CSCS to ensure the factuality of a response.
+                for _ in range(5):
+                    response = _send_request_and_handle_errors(str(job))
+                    if response:
+                        results += response
+                        break
         else:
+            for _ in range(5):
+                results = _send_request_and_handle_errors()
+                if results:
+                    break
             results = _send_request_and_handle_errors()
             if not results:
                 return {} if as_dict else []
