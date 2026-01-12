@@ -434,8 +434,12 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
 
     def kill_job(self, jobid: str) -> bool:
         transport = self.transport
-        with convert_header_exceptions():
-            transport.blocking_client.cancel_job(transport._machine, jobid)
+        try:
+            with convert_header_exceptions():
+                transport.blocking_client.cancel_job(transport._machine, jobid)
+        except FirecrestException as exc:
+            self.logger.debug(f"Unable to kill job {jobid}, the error was {exc}")
+            return False
         return True
 
     def _convert_time(self, string: str) -> int | None:
