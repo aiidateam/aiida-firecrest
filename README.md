@@ -18,8 +18,6 @@
 You can install the package either from GitHub or PyPI:
 
 ```bash
-pip install git+https://github.com/aiidateam/aiida-firecrest.git
-# pip not yet available
 pip install aiida-firecrest
 ```
 

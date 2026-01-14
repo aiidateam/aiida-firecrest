@@ -8,4 +8,4 @@
 ################################################################################
 """AiiDA Transport/Scheduler plugins for interfacing with FirecREST."""
 
-__version__ = "0.3.0"
+__version__ = "1.0.0"
