@@ -358,7 +358,7 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
         self._small_file_size_bytes = int(_SMALL_FILE_SIZE_MB * 1024 * 1024)
 
         self._payoff_override: bool | None = None
-        self._concurrent_io: int = 0
+        self._io_semaphore: asyncio.Semaphore = asyncio.Semaphore(max_io_allowed)
 
         secret = (
             Path(client_secret).read_text().strip()
@@ -438,14 +438,6 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
     @property
     def max_io_allowed(self) -> int:
         return self._max_io_allowed
-
-    async def _lock(self, sleep_time: float = 0.5) -> None:
-        while self._concurrent_io >= self.max_io_allowed:
-            await asyncio.sleep(sleep_time)
-        self._concurrent_io += 1
-
-    async def _unlock(self) -> None:
-        self._concurrent_io -= 1
 
     @property
     def is_open(self) -> bool:
@@ -850,15 +842,14 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
             raise FileNotFoundError(f"Source file does not exist: {remotepath}")
 
         with convert_header_exceptions():
-            await self._lock()
-            await self.async_client.download(
-                self._machine,
-                str(remotepath),
-                str(local),
-                account=self.billing_account,
-                blocking=True,
-            )
-            await self._unlock()
+            async with self._io_semaphore:
+                await self.async_client.download(
+                    self._machine,
+                    str(remotepath),
+                    str(local),
+                    account=self.billing_account,
+                    blocking=True,
+                )
 
         if self.checksum_check:
             await self._validate_checksum_async(local, remotepath)
@@ -1133,16 +1124,15 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
 
         # note this allows overwriting of existing files
         with convert_header_exceptions():
-            await self._lock()
-            await self.async_client.upload(
-                self._machine,
-                str(localpath),
-                str(remotepath.parent),
-                str(remotepath.name),
-                account=self.billing_account,
-                blocking=True,
-            )
-            await self._unlock()
+            async with self._io_semaphore:
+                await self.async_client.upload(
+                    self._machine,
+                    str(localpath),
+                    str(remotepath.parent),
+                    str(remotepath.name),
+                    account=self.billing_account,
+                    blocking=True,
+                )
 
         if self.checksum_check:
             await self._validate_checksum_async(localpath, remotepath)
@@ -1412,7 +1402,7 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
         # TODO remove from interface
         raise NotImplementedError("firecrest does not support command execution")
 
-    ## This methods that could be put in AsyncTransport, abstract class
+    ## These methods could be put in AsyncTransport, abstract class
     async def listdir_withattributes_async(
         self, path: TPath_Extended, pattern: str | None = None
     ) -> list[dict[str, Any]]:
