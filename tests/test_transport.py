@@ -301,6 +301,51 @@ def test_listdir(firecrest_computer: orm.Computer, tmpdir: Path):
 
 
 @pytest.mark.usefixtures("aiida_profile_clean")
+def test_listdir_withattributes(firecrest_computer: orm.Computer, tmpdir: Path):
+    """Test listdir_withattributes returns correct names, isdir flags, and attributes."""
+    import stat
+
+    transport = firecrest_computer.get_transport()
+    _remote = Path(transport._temp_directory) / "test_lsattr"
+    _local = tmpdir / "local_lsattr"
+    transport.mkdir(_remote)
+    _local.mkdir()
+
+    # Setup: 1 dir, 1 file with specific permissions, 1 symlink
+    transport.mkdir(_remote / "dir1")
+    (_local / "file1").write_text("content")
+    transport.putfile(_local / "file1", _remote / "file1")
+    transport.chmod(_remote / "file1", 0o644)
+    transport.symlink(_remote / "file1", _remote / "link1")
+
+    results = transport.listdir_withattributes(_remote)
+    results_dict = {item["name"]: item for item in results}
+
+    assert set(results_dict.keys()) == {"dir1", "file1", "link1"}
+
+    # Verify directory
+    assert results_dict["dir1"]["isdir"] is True
+    assert stat.S_ISDIR(results_dict["dir1"]["attributes"].st_mode)
+
+    # Verify file attributes match get_attribute results
+    file_attrs = results_dict["file1"]["attributes"]
+    expected_attrs = transport.get_attribute(_remote / "file1")
+    assert results_dict["file1"]["isdir"] is False
+    assert stat.S_ISREG(file_attrs.st_mode)
+    assert file_attrs.st_mode == expected_attrs.st_mode
+    assert file_attrs.st_size == expected_attrs.st_size
+    assert file_attrs.st_mtime == expected_attrs.st_mtime
+    assert file_attrs.st_uid == expected_attrs.st_uid
+    assert file_attrs.st_gid == expected_attrs.st_gid
+
+    # Verify pattern filtering
+    filtered = transport.listdir_withattributes(_remote, pattern="*1")
+    assert {item["name"] for item in filtered} == {"dir1", "file1", "link1"}
+    filtered = transport.listdir_withattributes(_remote, pattern="file*")
+    assert {item["name"] for item in filtered} == {"file1"}
+
+
+@pytest.mark.usefixtures("aiida_profile_clean")
 def test_put(firecrest_computer: orm.Computer, tmpdir: Path):
     """
     This is minimal test is to check if put() is raising errors as expected,
