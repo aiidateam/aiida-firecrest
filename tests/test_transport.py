@@ -338,6 +338,10 @@ def test_listdir_withattributes(firecrest_computer: orm.Computer, tmpdir: Path):
     assert file_attrs.st_uid == expected_attrs.st_uid
     assert file_attrs.st_gid == expected_attrs.st_gid
 
+    # Verify symlink
+    assert results_dict["link1"]["isdir"] is False
+    assert stat.S_ISLNK(results_dict["link1"]["attributes"].st_mode)
+
     # Verify pattern filtering
     filtered = transport.listdir_withattributes(_remote, pattern="*1")
     assert {item["name"] for item in filtered} == {"dir1", "file1", "link1"}
