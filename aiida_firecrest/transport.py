@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Callable
+from datetime import datetime, timezone
 import fnmatch
 import hashlib
 import os
@@ -1403,6 +1404,56 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
         raise NotImplementedError("firecrest does not support command execution")
 
     ## These methods could be put in AsyncTransport, abstract class
+    @staticmethod
+    def _parse_permissions(perms: str, file_type: str) -> int:
+        """Convert permission string like 'rwxr-xr-x' to st_mode integer.
+
+        :param perms: permission string (e.g., 'rwxr-xr-x' or 'rwxr-xr-x.')
+        :param file_type: file type character ('d' for dir, 'l' for link, '-' for file)
+        :return: st_mode integer
+        """
+        mode = 0
+        # File type bits
+        if file_type == "d":
+            mode |= stat.S_IFDIR
+        elif file_type == "l":
+            mode |= stat.S_IFLNK
+        else:
+            mode |= stat.S_IFREG
+
+        # Strip trailing '.' or other extra characters
+        perms = perms[:9]
+
+        # Permission bits: rwxrwxrwx
+        perm_bits = [
+            (stat.S_IRUSR, stat.S_IWUSR, stat.S_IXUSR),  # owner
+            (stat.S_IRGRP, stat.S_IWGRP, stat.S_IXGRP),  # group
+            (stat.S_IROTH, stat.S_IWOTH, stat.S_IXOTH),  # other
+        ]
+        for i, char in enumerate(perms):
+            group_idx = i // 3
+            perm_idx = i % 3
+            if char != "-" and group_idx < 3 and perm_idx < 3:
+                mode |= perm_bits[group_idx][perm_idx]
+
+        return mode
+
+    @staticmethod
+    def _parse_timestamp(timestamp: str) -> float:
+        """Convert ISO timestamp string to Unix timestamp float.
+
+        :param timestamp: ISO format timestamp (e.g., '2021-08-10T15:26:52')
+        :return: Unix timestamp as float
+        """
+        try:
+            dt = datetime.fromisoformat(timestamp)
+            # Treat naive datetime as UTC (FirecREST returns UTC timestamps)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except (ValueError, TypeError):
+            return 0.0
+
     async def listdir_withattributes_async(
         self, path: TPath_Extended, pattern: str | None = None
     ) -> list[dict[str, Any]]:
@@ -1431,19 +1482,49 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
             transport.get_attribute(); isdir is a boolean indicating if the object is a directory or not.
         """
         path = str(path)
-        retlist = []
         path_resolved = Path(path).resolve().as_posix()
 
-        for file_name in await self.listdir_async(path_resolved):
-            filepath = os.path.join(path_resolved, file_name)
-            attributes = await self.get_attribute_async(filepath)
+        if not path_resolved.endswith("/"):
+            path_resolved += "/"
+
+        # Use list_files directly to get all metadata in a single API call
+        # instead of calling listdir_async + get_attribute_async + isdir_async per file
+        with convert_header_exceptions():
+            results = await self.async_client.list_files(
+                self._machine,
+                path_resolved,
+                show_hidden=True,
+                recursive=False,
+                numeric_uid=True,
+            )
+
+        retlist = []
+        for result in results:
+            name = result["name"]
+            if pattern is not None and not fnmatch.fnmatch(name, pattern):
+                continue
+
+            # Parse permissions string to st_mode
+            st_mode = self._parse_permissions(result["permissions"], result["type"])
+            mtime = self._parse_timestamp(result["lastModified"])
+
             retlist.append(
                 {
-                    "name": file_name,
-                    "attributes": attributes,
-                    "isdir": await self.isdir_async(filepath),
+                    "name": name,
+                    "attributes": FileAttribute(
+                        {
+                            "st_size": int(result["size"]),
+                            "st_uid": int(result["user"]),
+                            "st_gid": int(result["group"]),
+                            "st_mode": st_mode,
+                            "st_atime": mtime,  # atime not available, use mtime
+                            "st_mtime": mtime,
+                        }
+                    ),
+                    "isdir": result["type"] == "d",
                 }
             )
+
         return retlist
 
     ## This methods that could be put in AsyncTransport, abstract class
