@@ -313,7 +313,7 @@ def test_listdir_withattributes(firecrest_computer: orm.Computer, tmpdir: Path):
 
     # Setup: 1 dir, 1 file with specific permissions, 1 symlink
     transport.mkdir(_remote / "dir1")
-    (_local / "file1").write_text("content")
+    Path(_local / "file1").write_text("content")
     transport.putfile(_local / "file1", _remote / "file1")
     transport.chmod(_remote / "file1", 0o644)
     transport.symlink(_remote / "file1", _remote / "link1")

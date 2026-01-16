@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Callable
-from datetime import datetime
+from datetime import datetime, timezone
 import fnmatch
 import hashlib
 import os
@@ -1447,6 +1447,9 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
         """
         try:
             dt = datetime.fromisoformat(timestamp)
+            # Treat naive datetime as UTC (FirecREST returns UTC timestamps)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
             return dt.timestamp()
         except (ValueError, TypeError):
             return 0.0
@@ -1503,7 +1506,7 @@ class FirecrestTransport(AsyncTransport):  # type: ignore[misc]
 
             # Parse permissions string to st_mode
             st_mode = self._parse_permissions(result["permissions"], result["type"])
-            mtime = self._parse_timestamp(result["last_modified"])
+            mtime = self._parse_timestamp(result["lastModified"])
 
             retlist.append(
                 {
