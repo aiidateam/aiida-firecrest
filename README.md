@@ -136,7 +136,15 @@ pre-commit run --all-files
 
 ---
 
-### Acknowledgment:
+## How to cite
+
+If you use `aiida-firecrest` in your research, we would be grateful if you could cite the following publication:
+
+* E. Palme *et al.*, *FirecREST v2: lessons learned from redesigning an API for scalable HPC resource access*, [arXiv:2512.11634](https://doi.org/10.48550/arXiv.2512.11634) (2025)
+
+---
+
+## Acknowledgment:
 
 This project is supported by SwissTwins project.
 
