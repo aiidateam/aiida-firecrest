@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import re
 import string
+import time
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from aiida.engine.processes.exit_code import ExitCode
@@ -214,7 +215,7 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
         as_dict: bool = False,
     ) -> list[JobInfo] | dict[str, JobInfo]:
         """
-        Retrieve the information of the jobs from the scheduler.
+        Retrieve the information of the jobs from the scheduler. If a certain job is not found, it is assumed as completed.
         :param jobs: a list of job ids to retrieve. If None, all jobs of the user are retrieved.
         :param user: the user to retrieve the jobs for. Note: this parameter is not used in Firecrest,
             as it does not support querying by user. We just ignore it.
@@ -241,30 +242,38 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
                     f"Error retrieving job: {job_id} from the Firecrest server: {exc}"
                 ) from exc
             except JobNotFoundError:
+                self.logger.warning(
+                    f"The following Job ids {job_id} was not found in FirecREST queue."
+                    "This may result in premature retrival in aiida-core."
+                )
                 # If the job is not found, we just skip it
                 # this is to be consistent with aiida-firecrest-v1
                 return []
 
-        # If the job is completed, while aiida expect a silent return
-        if jobs:
-            for job in jobs:
-                # This loop is a way to battle a delay in firecrest
-                # when reading the recently submitted jobs from slurm.
-                # See some discussions in https://github.com/aiidateam/aiida-firecrest/issues/103
-                # This is the recommended way by CSCS to ensure the factuality of a response.
-                for _ in range(5):
-                    response = _send_request_and_handle_errors(str(job))
-                    if response:
-                        results += response
+        # Retry loop to battle a delay in firecrest when reading recently submitted jobs.
+        # See https://github.com/aiidateam/aiida-firecrest/issues/103
+        jobs_set = {str(j) for j in jobs} if jobs else set()
+        if jobs_set:
+            # Send individual requests for each job ID to reduce API load
+            for job_id in jobs_set:
+                for attempt in range(3):
+                    job_results = _send_request_and_handle_errors(job_id)
+                    if job_results:
+                        results.extend(job_results)
                         break
+                    if attempt < 2:
+                        time.sleep(1)
+                    else:
+                        self.logger.warning(
+                            f"Job id {job_id} was not found in FirecREST queue after 3 attempts. "
+                            "This may result in premature retrieval in aiida-core."
+                        )
         else:
-            for _ in range(5):
-                results = _send_request_and_handle_errors()
-                if results:
-                    break
+            # Fetch all jobs when no specific job IDs are requested
             results = _send_request_and_handle_errors()
-            if not results:
-                return {} if as_dict else []
+
+        if not results:
+            return {} if as_dict else []
 
         job_list = []
         for raw_result in results:
@@ -362,7 +371,7 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
                 else:
                     this_job.requested_wallclock_time_seconds = time_limit
             except ValueError:
-                self.logger.warning(
+                self.logger.debug(
                     f"Couldn't parse the time limit for job id {this_job.job_id}"
                 )
 
@@ -376,7 +385,7 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
                     else:
                         this_job.wallclock_time_seconds = 0
                 except ValueError:
-                    self.logger.warning(
+                    self.logger.debug(
                         f"Couldn't parse time_used for job id {this_job.job_id}"
                     )
 
@@ -389,7 +398,7 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
                         raw_result["time"]["start"]
                     )
                 except ValueError:
-                    self.logger.warning(
+                    self.logger.debug(
                         f"Couldn't parse dispatch_time for job id {this_job.job_id}"
                     )
 
@@ -399,7 +408,7 @@ class FirecrestScheduler(Scheduler):  # type: ignore[misc]
                         raw_result["time"]["end"]
                     )
                 except ValueError:
-                    self.logger.warning(
+                    self.logger.debug(
                         f"Couldn't parse finish_time for job id {this_job.job_id}"
                     )
 
